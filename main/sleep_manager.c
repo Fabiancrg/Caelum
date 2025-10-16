@@ -12,11 +12,12 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
-#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_zigbee_core.h"
 #include "esp_zb_weather.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *SLEEP_TAG = "SLEEP";
 

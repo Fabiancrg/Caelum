@@ -35,7 +35,7 @@
 #endif
 
 static const char *TAG = "WEATHER_STATION";
-static const char *RAIN_TAG = "RAIN_GAUGE";
+//static const char *RAIN_TAG = "RAIN_GAUGE";
 
 /* Rain gauge configuration */
 #define RAIN_GAUGE_GPIO         18              // GPIO pin for rain gauge reed switch
@@ -275,6 +275,33 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
     return ret;
 }
 
+/**
+ * @brief Prepare for deep sleep - called by Zigbee scheduler after operations complete
+ */
+static void prepare_for_deep_sleep(uint8_t param)
+{
+    ESP_LOGI(TAG, "✅ Zigbee operations complete, preparing for deep sleep...");
+    
+    /* Save rainfall data before sleeping */
+    float current_rainfall = total_rainfall_mm;
+    uint32_t current_pulses = rain_pulse_count;
+    save_rainfall_data(current_rainfall, current_pulses);
+    
+    /* Determine sleep duration based on recent activity */
+    uint32_t sleep_duration = get_adaptive_sleep_duration(0.0f);
+    
+    ESP_LOGI(TAG, "💤 Entering deep sleep for %lu seconds (%lu minutes)...", 
+             sleep_duration, sleep_duration / 60);
+    
+    /* Give time for log output */
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    /* Enter deep sleep with timer and GPIO wake-up enabled */
+    enter_deep_sleep(sleep_duration, true);  // Enable rain detection wake-up
+    
+    /* Never reached - device will restart after wake-up */
+}
+
 static void esp_zb_task(void *pvParameters)
 {
     /* initialize Zigbee stack */
@@ -478,35 +505,14 @@ static void esp_zb_task(void *pvParameters)
     /* Start BME280 periodic reading (initial delay 5 seconds) */
     esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 5000);
     
+    /* Schedule deep sleep entry after allowing time for Zigbee operations */
+    esp_zb_scheduler_alarm((esp_zb_callback_t)prepare_for_deep_sleep, 0, 10000); // 10 seconds
+    
     /* Note: Button monitoring is now interrupt-based, no polling task needed */
     
-    /* For battery mode: Run Zigbee stack for a short time, then enter deep sleep */
-    ESP_LOGI(TAG, "⏳ Running Zigbee operations for 10 seconds...");
-    
-    /* Run Zigbee stack iterations for limited time */
-    for (int i = 0; i < 100; i++) {  // 100 iterations * 100ms = 10 seconds
-        esp_zb_main_loop_iteration();
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    
-    ESP_LOGI(TAG, "✅ Zigbee operations complete");
-    
-    /* Save rainfall data before sleeping */
-    float current_rainfall = 0.0f;  // Get from rain gauge state
-    uint32_t current_pulses = 0;    // Get from rain gauge state
-    // TODO: Get actual values from global variables
-    save_rainfall_data(current_rainfall, current_pulses);
-    
-    /* Determine sleep duration based on recent activity */
-    uint32_t sleep_duration = get_adaptive_sleep_duration(0.0f);
-    
-    ESP_LOGI(TAG, "💤 Entering deep sleep for %lu seconds (%lu minutes)...", 
-             sleep_duration, sleep_duration / 60);
-    
-    /* Enter deep sleep with timer and GPIO wake-up enabled */
-    enter_deep_sleep(sleep_duration, true);  // Enable rain detection wake-up
-    
-    /* Never reached - device will restart after wake-up */
+    /* Start main Zigbee stack loop - will run until deep sleep scheduled task executes */
+    ESP_LOGI(TAG, "⏳ Starting Zigbee stack, will enter deep sleep in 10 seconds...");
+    esp_zb_stack_main_loop();
 }
 
 
