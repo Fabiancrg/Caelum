@@ -37,7 +37,7 @@
 
 #include "esp_log.h"
 #include "led_strip.h"
-#include "light_driver.h"
+#include "weather_driver.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

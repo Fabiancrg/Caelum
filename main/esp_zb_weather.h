@@ -13,7 +13,7 @@
  */
 
 #include "esp_zigbee_core.h"
-#include "light_driver.h"
+#include "weather_driver.h"
 #include "zcl_utility.h"
 
 /* Zigbee configuration */

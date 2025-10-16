@@ -18,7 +18,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "ha/esp_zigbee_ha_standard.h"
-#include "esp_zb_light.h"
+#include "esp_zb_weather.h"
 #include "driver/gpio.h"
 #include "bme280_app.h"
 #include "i2c_bus.h"
