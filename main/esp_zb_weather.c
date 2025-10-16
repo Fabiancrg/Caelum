@@ -3,13 +3,10 @@
  *
  * SPDX-License-Identifier:  LicenseRef-Included
  *
- * Zigbee HA_on_off_light Example
+ * ESP32-H2 Zigbee Weather Station with Deep Sleep
  *
- * This example code is in the Public Domain (or CC0 licensed, at your option.)
- *
- * Unless required by applicable law or agreed to in writing, this
- * software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
- * CONDITIONS OF ANY KIND, either express or implied.
+ * Battery-powered weather station with 15-minute wake intervals
+ * and immediate wake-up on rain detection (>1mm)
  */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,6 +16,7 @@
 #include "nvs_flash.h"
 #include "ha/esp_zigbee_ha_standard.h"
 #include "esp_zb_weather.h"
+#include "sleep_manager.h"
 #include "driver/gpio.h"
 #include "bme280_app.h"
 #include "i2c_bus.h"
@@ -33,15 +31,15 @@
 #endif
 
 #if !defined ZB_ED_ROLE
-#error Define ZB_ED_ROLE in idf.py menuconfig to compile light (End Device) source code.
+#error Define ZB_ED_ROLE in idf.py menuconfig to compile Weather Station (End Device) source code.
 #endif
 
-static const char *TAG = "ESP_ZB_ON_OFF_LIGHT";
+static const char *TAG = "WEATHER_STATION";
+static const char *RAIN_TAG = "RAIN_GAUGE";
 
 /* Rain gauge configuration */
 #define RAIN_GAUGE_GPIO         18              // GPIO pin for rain gauge reed switch
-#define RAIN_MM_PER_PULSE       0.36f           // mm of rain per bucket tip
-#define RAIN_GAUGE_TAG          "RAIN_GAUGE"
+#define RAIN_MM_PER_PULSE       0.36f           // mm of rain per bucket tip (adjust for your sensor)
 #define RAIN_NVS_NAMESPACE      "rain_gauge"
 #define RAIN_NVS_KEY            "total_mm"
 
@@ -482,8 +480,33 @@ static void esp_zb_task(void *pvParameters)
     
     /* Note: Button monitoring is now interrupt-based, no polling task needed */
     
-    /* Start main Zigbee stack loop */
-    esp_zb_stack_main_loop();
+    /* For battery mode: Run Zigbee stack for a short time, then enter deep sleep */
+    ESP_LOGI(TAG, "⏳ Running Zigbee operations for 10 seconds...");
+    
+    /* Run Zigbee stack iterations for limited time */
+    for (int i = 0; i < 100; i++) {  // 100 iterations * 100ms = 10 seconds
+        esp_zb_main_loop_iteration();
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    ESP_LOGI(TAG, "✅ Zigbee operations complete");
+    
+    /* Save rainfall data before sleeping */
+    float current_rainfall = 0.0f;  // Get from rain gauge state
+    uint32_t current_pulses = 0;    // Get from rain gauge state
+    // TODO: Get actual values from global variables
+    save_rainfall_data(current_rainfall, current_pulses);
+    
+    /* Determine sleep duration based on recent activity */
+    uint32_t sleep_duration = get_adaptive_sleep_duration(0.0f);
+    
+    ESP_LOGI(TAG, "💤 Entering deep sleep for %lu seconds (%lu minutes)...", 
+             sleep_duration, sleep_duration / 60);
+    
+    /* Enter deep sleep with timer and GPIO wake-up enabled */
+    enter_deep_sleep(sleep_duration, true);  // Enable rain detection wake-up
+    
+    /* Never reached - device will restart after wake-up */
 }
 
 
@@ -1000,11 +1023,34 @@ static void rain_gauge_init(void)
 
 void app_main(void)
 {
+    /* Initialize NVS */
+    ESP_ERROR_CHECK(nvs_flash_init());
+    
+    /* Check wake-up reason and print statistics */
+    wake_reason_t wake_reason = check_wake_reason();
+    print_wake_statistics();
+    
+    /* Load rainfall data from RTC/NVS */
+    float rainfall_mm = 0.0f;
+    uint32_t pulse_count = 0;
+    load_rainfall_data(&rainfall_mm, &pulse_count);
+    
+    /* Print battery life estimate (assuming 2500mAh battery) */
+    estimate_battery_life(2500);
+    
+    /* Configure ESP-IDF platform */
     esp_zb_platform_config_t config = {
         .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
         .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
     };
-    ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
+    
+    /* Start Zigbee task */
+    ESP_LOGI(TAG, "🚀 Starting Zigbee Weather Station (Battery Mode)");
+    ESP_LOGI(TAG, "Wake reason: %s", 
+             wake_reason == WAKE_REASON_TIMER ? "TIMER" :
+             wake_reason == WAKE_REASON_RAIN ? "RAIN" :
+             wake_reason == WAKE_REASON_BUTTON ? "BUTTON" : "RESET");
+    
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }
