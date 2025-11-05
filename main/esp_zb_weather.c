@@ -87,8 +87,8 @@ static esp_err_t deferred_driver_init(void)
     i2c_config_t i2c_cfg = {
         .mode = I2C_MODE_MASTER,
 #ifdef CONFIG_IDF_TARGET_ESP32H2
-        .sda_io_num = GPIO_NUM_1,      // ESP32-H2 I2C SDA
-        .scl_io_num = GPIO_NUM_2,      // ESP32-H2 I2C SCL
+        .sda_io_num = GPIO_NUM_10,     // ESP32-H2 I2C SDA
+        .scl_io_num = GPIO_NUM_11,     // ESP32-H2 I2C SCL
 #else
         .sda_io_num = GPIO_NUM_6,      // ESP32-C6 default I2C SDA
         .scl_io_num = GPIO_NUM_7,      // ESP32-C6 default I2C SCL
@@ -111,7 +111,7 @@ static esp_err_t deferred_driver_init(void)
         ESP_LOGW(TAG, "Continuing without BME280 sensor");
     } else {
 #ifdef CONFIG_IDF_TARGET_ESP32H2
-        ESP_LOGI(TAG, "BME280 sensor initialized successfully on ESP32-H2 (SDA:GPIO1, SCL:GPIO2)");
+        ESP_LOGI(TAG, "BME280 sensor initialized successfully on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)");
 #else
         ESP_LOGI(TAG, "BME280 sensor initialized successfully on ESP32-C6 (SDA:GPIO6, SCL:GPIO7)");
 #endif
