@@ -6,11 +6,20 @@ export default {
     vendor: 'ESPRESSIF',
     description: 'Caelum - Battery-powered Zigbee weather station with rain gauge',
     extend: [
-        m.deviceEndpoints({"endpoints":{"1":1,"2":2,"3":3,"4":4}}), 
+        m.deviceEndpoints({"endpoints":{"1":1,"2":2,"3":3}}), 
         m.temperature(), 
         m.humidity(), 
         m.pressure(), 
-        m.battery(), 
+        m.battery(),
+        m.onOff(
+            {
+                "powerOnBehavior":false,
+                "description":"LED debug indicator control",
+                "endpointNames":["1"],
+                "exposesName": "LED Debug", 
+                "icon": "mdi:led-on"
+            }
+        ), 
         m.numeric(
             {
                 "name":"Rainfall Total",
@@ -38,15 +47,6 @@ export default {
                 "access":"ALL", 
                 "endpointNames":["3"],
                 icon: "mdi:sleep"
-            }
-        ),
-        m.onOff(
-            {
-                "powerOnBehavior":false,
-                "description":"LED debug indicator control",
-                "endpointNames":["4"],
-                "exposesName": "LED Debug", 
-                "icon": "mdi:led-on"
             }
         )
     ],

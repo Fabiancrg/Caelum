@@ -78,7 +78,7 @@ mosquitto_pub -t 'zigbee2mqtt/caelum-weather-station/set' -m '{"state_4":"OFF"}'
 4. **Endpoint Configuration**:
    ```c
    esp_zb_endpoint_config_t endpoint_led_config = {
-       .endpoint = HA_ESP_LED_DEBUG_ENDPOINT,  // 4
+   /* LED debug endpoint removed; On/Off moved to primary endpoint (EP1) */
        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
        .app_device_id = ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID,
    };

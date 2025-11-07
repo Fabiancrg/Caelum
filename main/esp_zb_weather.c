@@ -536,12 +536,12 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
         }
     }
     
-    /* Handle LED debug control via On/Off cluster */
-    if (message->info.dst_endpoint == HA_ESP_LED_DEBUG_ENDPOINT && 
+    /* Handle LED debug control via On/Off cluster on primary endpoint (EP1) */
+    if (message->info.dst_endpoint == HA_ESP_BME280_ENDPOINT && 
         message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF &&
         message->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID) {
         
-        ESP_LOGI(TAG, "🔧 LED debug control message received on endpoint %d", HA_ESP_LED_DEBUG_ENDPOINT);
+        ESP_LOGI(TAG, "🔧 LED debug control message received on primary endpoint %d", HA_ESP_BME280_ENDPOINT);
         
         if (message->attribute.data.size == sizeof(bool)) {
             bool new_state = *(bool*)message->attribute.data.value;
@@ -885,6 +885,18 @@ static void esp_zb_task(void *pvParameters)
     ESP_LOGI(TAG, "📦 OTA client cluster added to endpoint %d (version: 0x%08lX, mfr: 0x%04X, type: 0x%04X)", 
              HA_ESP_BME280_ENDPOINT, ota_file_version, OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
 
+    /* Move LED debug On/Off control to primary endpoint (EP1).
+     * Some controllers probe the primary endpoint for common clusters; placing
+     * the genOnOff cluster on EP1 avoids UNSUPPORTED_CLUSTER responses when the
+     * controller queries EP1. This does not interfere with temperature/humidity/
+     * pressure clusters which remain on EP1 as separate clusters.
+     */
+    esp_zb_on_off_cluster_cfg_t onoff_cfg = {
+        .on_off = led_debug_enabled,
+    };
+    esp_zb_attribute_list_t *esp_zb_onoff_cluster = esp_zb_on_off_cluster_create(&onoff_cfg);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(esp_zb_bme280_clusters, esp_zb_onoff_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+
     esp_zb_endpoint_config_t endpoint_bme280_config = {
         .endpoint = HA_ESP_BME280_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
@@ -961,30 +973,10 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_sleep_clusters, endpoint_sleep_config);
 
-    /* CREATE LED DEBUG CONTROL ENDPOINT */
-    esp_zb_cluster_list_t *esp_zb_led_clusters = esp_zb_zcl_cluster_list_create();
-    
-    /* Basic cluster intentionally omitted for LED debug endpoint (EP4).
-     * LED debug endpoint provides only On/Off control and Identify cluster.
+    /* LED debug endpoint removed - On/Off control moved to primary endpoint.
+     * LED functionality is handled via the genOnOff cluster on the primary
+     * endpoint (EP1). No separate EP4 is registered.
      */
-    
-    /* Create On/Off cluster for LED debug control */
-    esp_zb_on_off_cluster_cfg_t onoff_cfg = {
-        .on_off = led_debug_enabled,  // Initial state matches current setting
-    };
-    esp_zb_attribute_list_t *esp_zb_onoff_cluster = esp_zb_on_off_cluster_create(&onoff_cfg);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_on_off_cluster(esp_zb_led_clusters, esp_zb_onoff_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    /* Add Identify cluster for LED debug endpoint */
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(esp_zb_led_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    esp_zb_endpoint_config_t endpoint_led_config = {
-        .endpoint = HA_ESP_LED_DEBUG_ENDPOINT,
-        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID,  // On/Off Output device
-        .app_device_version = 0
-    };
-    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_led_clusters, endpoint_led_config);
 
     /* Add manufacturer info to all endpoints */
     zcl_basic_manufacturer_info_t info = {
