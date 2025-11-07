@@ -953,7 +953,7 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_attribute_list_t *esp_zb_sleep_analog_cluster = esp_zb_analog_input_cluster_create(&sleep_analog_cfg);
     
     /* Add description attribute */
-    char sleep_description[] = "\x14""Sleep Duration (sec)";  // Length-prefixed: 20 bytes + "Sleep Duration (sec)"
+    char sleep_description[] = "\x0E""Sleep Duration";  // Length-prefixed: 14 bytes + "Sleep Duration"
     esp_zb_analog_input_cluster_add_attr(esp_zb_sleep_analog_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, sleep_description);
     
     /* Add engineering units attribute (seconds) */

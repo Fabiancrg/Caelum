@@ -11,15 +11,7 @@ export default {
         m.humidity(), 
         m.pressure(), 
         m.battery(),
-        m.onOff(
-            {
-                "powerOnBehavior":false,
-                "description":"LED debug indicator control",
-                "endpointNames":["1"],
-                "exposesName": "LED Debug", 
-                "icon": "mdi:led-on"
-            }
-        ), 
+        m.onOff({"powerOnBehavior":false, "description":"LED debug indicator control", "exposesName": "Debug LED"}), 
         m.numeric(
             {
                 "name":"Rainfall Total",
@@ -51,3 +43,4 @@ export default {
         )
     ],
 };
+
