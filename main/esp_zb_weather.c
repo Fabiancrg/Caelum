@@ -89,7 +89,6 @@ static void debug_led_set(bool state)
         led_strip_clear(led_strip);
         return;
     }
-    
     if (state) {
         /* Blue color for connected state */
         led_strip_set_pixel(led_strip, 0, 0, 0, 16);  // R=0, G=0, B=16 (dim blue)
@@ -97,6 +96,17 @@ static void debug_led_set(bool state)
         /* Off */
         led_strip_set_pixel(led_strip, 0, 0, 0, 0);
     }
+    led_strip_refresh(led_strip);
+}
+
+static void debug_led_set_orange(void)
+{
+    if (!led_debug_enabled) {
+        led_strip_clear(led_strip);
+        return;
+    }
+    /* Orange color for network leave */
+    led_strip_set_pixel(led_strip, 0, 16, 8, 0);  // R=16, G=8, B=0 (dim orange)
     led_strip_refresh(led_strip);
 }
 
@@ -145,8 +155,7 @@ static void debug_led_rain_flash(void)
     led_strip_set_pixel(led_strip, 0, 16, 16, 16);  // R=16, G=16, B=16 (dim white)
     led_strip_refresh(led_strip);
     vTaskDelay(pdMS_TO_TICKS(100));  // Flash for 100ms
-    
-    /* Return to previous state */
+    /* Return to previous state: always solid blue if connected */
     if (zigbee_network_connected) {
         led_strip_set_pixel(led_strip, 0, 0, 0, 16);  // Back to blue (connected)
     } else {
@@ -362,6 +371,13 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         ESP_LOGI(TAG, "Initialize Zigbee stack");
         debug_led_start_blink();  // Start blinking when joining network
         esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
+        break;
+    case ESP_ZB_ZDO_SIGNAL_LEAVE:
+        ESP_LOGI(TAG, "Device is leaving the Zigbee network");
+        debug_led_stop_blink();
+        debug_led_set_orange();
+        zigbee_network_connected = false;
+        rain_gauge_disable_isr();
         break;
     case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
     case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
@@ -680,7 +696,11 @@ static void prepare_for_deep_sleep(uint8_t param)
     
     /* Give time for log output */
     vTaskDelay(pdMS_TO_TICKS(100));
-    
+
+    /* Update rain gauge value before sleep */
+    ESP_LOGI(TAG, " 🌧️ Sending rainfall total value...");
+    rain_gauge_zigbee_update(0); // Send last rain value
+    vTaskDelay(pdMS_TO_TICKS(100)); // Allow time for Zigbee transmission
     /* Suspend Zigbee stack before deep sleep (required for ESP32-H2) */
     ESP_LOGI(TAG, "📴 Suspending Zigbee stack before deep sleep...");
     esp_zb_sleep_enable(true);

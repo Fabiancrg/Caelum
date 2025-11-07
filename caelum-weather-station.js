@@ -21,12 +21,13 @@ export default {
                 "unit": "mm",
                 "precision": 0,
                 "access":"STATE_GET",
+                icon: "mdi:weather-rainy",
                 "endpointNames":["2"]
             }
         ), 
         m.numeric(
             {
-                "name":"Sleep Duration (sec)",
+                "name":"Sleep Duration",
                 "cluster":"genAnalogInput",
                 "attribute":"presentValue",
                 "reporting":{"min":"MIN","max":900,"change":0.1},
@@ -35,14 +36,17 @@ export default {
                 "valueMin": 30,
                 "valueMax": 900,
                 "access":"ALL", 
-                "endpointNames":["3"]
+                "endpointNames":["3"],
+                icon: "mdi:sleep"
             }
         ),
         m.onOff(
             {
                 "powerOnBehavior":false,
                 "description":"LED debug indicator control",
-                "endpointNames":["4"]
+                "endpointNames":["4"],
+                "exposesName": "LED Debug", 
+                "icon": "mdi:led-on"
             }
         )
     ],
