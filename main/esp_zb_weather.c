@@ -256,6 +256,11 @@ static inline void debug_led_rain_flash(void) {}
 #define RAIN_MM_PER_PULSE       0.36f           // mm of rain per bucket tip (adjust for your sensor)
 
 /* Rain gauge variables */
+typedef struct {
+    uint32_t gpio_num;
+    TickType_t tick;
+} rain_evt_t;
+
 static QueueHandle_t rain_gauge_evt_queue = NULL;
 static float total_rainfall_mm = 0.0f;
 static uint32_t rain_pulse_count = 0;
@@ -264,6 +269,10 @@ static bool rain_gauge_enabled = false;  // Only enable when connected to networ
 static bool rain_gauge_isr_installed = false;  // Track ISR installation state
 static float last_reported_rainfall_mm = 0.0f;  // Track last reported value for 1mm threshold
 static TickType_t last_report_time = 0;  // Track last report time for hourly reporting
+/* Duplicate suppression window (ms) after wake-count to avoid counting the
+ * same physical pulse twice when the ISR event for that edge is queued. */
+#define DUPLICATE_WAKE_MS 50
+static TickType_t wake_pulse_tick = 0;
 
 /* Sleep configuration variables */
 static uint32_t sleep_duration_seconds = SLEEP_DURATION_S;  // Default 15 minutes (900 seconds)
@@ -1121,12 +1130,17 @@ static void IRAM_ATTR rain_gauge_isr_handler(void *arg)
 {
     uint32_t gpio_num = RAIN_GAUGE_GPIO;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    
+
     // ISR-safe: just increment a counter for debugging (can view in logs after interrupt)
     static uint32_t isr_trigger_count = 0;
     isr_trigger_count++;
-    
-    xQueueSendFromISR(rain_gauge_evt_queue, &gpio_num, &xHigherPriorityTaskWoken);
+
+    /* Prepare event with ISR tick for accurate timing */
+    rain_evt_t evt = {
+        .gpio_num = gpio_num,
+        .tick = xTaskGetTickCountFromISR(),
+    };
+    xQueueSendFromISR(rain_gauge_evt_queue, &evt, &xHigherPriorityTaskWoken);
     
     if (xHigherPriorityTaskWoken) {
         portYIELD_FROM_ISR();
@@ -1135,108 +1149,111 @@ static void IRAM_ATTR rain_gauge_isr_handler(void *arg)
 
 static void rain_gauge_task(void *arg)
 {
-    uint32_t io_num;
+    rain_evt_t evt;
     TickType_t last_pulse_time = 0;
     TickType_t last_debug_time = 0;
     const TickType_t DEBOUNCE_TIME = pdMS_TO_TICKS(200); // 200ms debounce - more than adequate for rain gauge
-    const TickType_t BOUNCE_SETTLE_TIME = pdMS_TO_TICKS(1000); // 1 second to completely eliminate bounce issues
+    const TickType_t BOUNCE_SETTLE_TIME = pdMS_TO_TICKS(200); // 200ms settle to reduce gap while still debouncing
     const TickType_t DEBUG_INTERVAL = pdMS_TO_TICKS(5000); // Log GPIO state every 5 seconds
-    
+
     ESP_LOGI(RAIN_TAG, "Rain gauge task started, waiting for events...");
-    
+
     for (;;) {
         // Wait for queue with timeout to allow periodic debug logging
-        if (xQueueReceive(rain_gauge_evt_queue, &io_num, pdMS_TO_TICKS(100))) {
-            TickType_t current_time = xTaskGetTickCount();
-            int pin_level_isr = gpio_get_level(RAIN_GAUGE_GPIO);
-            
-            ESP_LOGI(RAIN_TAG, "🔍 ISR TRIGGERED on GPIO%u! GPIO level: %d, enabled: %s", 
-                     io_num, pin_level_isr, rain_gauge_enabled ? "YES" : "NO");
-            
-            // Only process if rain gauge is enabled (connected to network)
+        if (xQueueReceive(rain_gauge_evt_queue, &evt, pdMS_TO_TICKS(100))) {
+            TickType_t current_time = evt.tick;
+            int pin_level_isr = gpio_get_level(evt.gpio_num);
+
+            ESP_LOGI(RAIN_TAG, "🔍 ISR TRIGGERED on GPIO%u! GPIO level: %d, enabled: %s",
+                     evt.gpio_num, pin_level_isr, rain_gauge_enabled ? "YES" : "NO");
+
+            // Allow counting pulses even when not yet connected to network.
+            // This prevents losing pulses that occur after wake but before Zigbee rejoin.
             if (!rain_gauge_enabled) {
-                ESP_LOGW(RAIN_TAG, "⚠️  Rain gauge interrupt IGNORED - not connected to network");
-                continue;
+                ESP_LOGW(RAIN_TAG, "⚠️ Rain gauge interrupt received while not connected — counting locally but not reporting");
+                /* fall through to counting/debounce logic below; reporting to Zigbee
+                 * will be gated by checking `rain_gauge_enabled` before scheduling
+                 * any Zigbee updates. */
             }
-            
+
             uint32_t time_diff_ms = pdTICKS_TO_MS(current_time - last_pulse_time);
-            
-            ESP_LOGI(RAIN_TAG, "🕐 Time since last pulse: %u ms (debounce threshold: %u ms)", 
+
+            ESP_LOGI(RAIN_TAG, "🕐 Time since last pulse: %u ms (debounce threshold: %u ms)",
                      time_diff_ms, pdTICKS_TO_MS(DEBOUNCE_TIME));
-            
+
             // Reasonable debounce check - 100ms minimum between pulses
             if ((current_time - last_pulse_time) > DEBOUNCE_TIME) {
-                int pin_level = gpio_get_level(RAIN_GAUGE_GPIO);
-                ESP_LOGI(RAIN_TAG, "🔌 GPIO%d level: %d", RAIN_GAUGE_GPIO, pin_level);
-                
+                int pin_level = gpio_get_level(evt.gpio_num);
+                ESP_LOGI(RAIN_TAG, "🔌 GPIO%d level: %d", evt.gpio_num, pin_level);
+
                 // Enhanced verification: check pin is high and wait for signal stability
                 if (pin_level == 1) {
                     vTaskDelay(pdMS_TO_TICKS(20)); // Wait 20ms for signal stability
-                    
-                    int pin_level_after = gpio_get_level(RAIN_GAUGE_GPIO);
-                    ESP_LOGI(RAIN_TAG, "🔌 GPIO%d level after 20ms: %d", RAIN_GAUGE_GPIO, pin_level_after);
-                    
+
+                    int pin_level_after = gpio_get_level(evt.gpio_num);
+                    ESP_LOGI(RAIN_TAG, "🔌 GPIO%d level after 20ms: %d", evt.gpio_num, pin_level_after);
+
                     // Verify signal is still stable - for rain gauge, we want rock-solid detection
                     if (pin_level_after == 1) {
-                        // Temporarily disable ISR to prevent bounce interrupts
-                        ESP_LOGI(RAIN_TAG, "🔇 Disabling ISR for %u ms to prevent bounce", pdTICKS_TO_MS(BOUNCE_SETTLE_TIME));
-                        gpio_isr_handler_remove(RAIN_GAUGE_GPIO);
-                        
+                        // Temporarily disable IRQ line to prevent bounce interrupts
+                        // Keep ISR handler installed so events after the settle
+                        // window will still be captured.
+                        ESP_LOGI(RAIN_TAG, "🔇 Disabling GPIO interrupts for %u ms to prevent bounce", pdTICKS_TO_MS(BOUNCE_SETTLE_TIME));
+                        gpio_intr_disable(evt.gpio_num);
+
                         last_pulse_time = current_time;
-                        rain_pulse_count++;
-                        total_rainfall_mm += RAIN_MM_PER_PULSE;
-                        
+                        /* Avoid double-counting the wake-causing pulse: if the
+                         * ISR event corresponds to the same physical pulse that
+                         * we already counted on wake (within DUPLICATE_WAKE_MS),
+                         * skip it. We compare using the tick provided by the ISR. */
+                        if (wake_pulse_tick != 0 && (evt.tick > wake_pulse_tick) &&
+                            ((evt.tick - wake_pulse_tick) <= pdMS_TO_TICKS(DUPLICATE_WAKE_MS))) {
+                            ESP_LOGI(RAIN_TAG, "ℹ️ Duplicate ISR event within wake window - skipping duplicate");
+                            /* Clear the marker so subsequent pulses are counted */
+                            wake_pulse_tick = 0;
+                        } else {
+                            rain_pulse_count++;
+                            total_rainfall_mm += RAIN_MM_PER_PULSE;
+                        }
+
                         // Round to 2 decimal places to avoid floating-point precision accumulation
                         total_rainfall_mm = roundf(total_rainfall_mm * 100.0f) / 100.0f;
-                        
+
                         /* Flash LED white to indicate rain pulse detected */
                         debug_led_rain_flash();
-                        
-                        ESP_LOGI(RAIN_TAG, "🌧️ Rain pulse #%u detected! Total: %.2f mm (+%.2f mm)", 
+
+                        ESP_LOGI(RAIN_TAG, "🌧️ Rain pulse #%u detected! Total: %.2f mm (+%.2f mm)",
                                  rain_pulse_count, total_rainfall_mm, RAIN_MM_PER_PULSE);
-                        
+
                         // Save to NVS every 10 pulses (via sleep manager for unified storage)
                         if (rain_pulse_count % 10 == 0) {
                             save_rainfall_data(total_rainfall_mm, rain_pulse_count);
                         }
-                        
+
                         // Check if we should report to Zigbee (every hour or 1mm increment)
-                        if (rain_gauge_should_report()) {
+                        // Only schedule Zigbee reporting when the rain gauge is enabled
+                        // (i.e. device connected to coordinator). If we're offline,
+                        // still update local counters and persist, but defer reporting.
+                        if (rain_gauge_enabled && rain_gauge_should_report()) {
                             esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_zigbee_update, 0, 10);
                             last_reported_rainfall_mm = total_rainfall_mm;
                             last_report_time = current_time;
                         }
-                        
-                        // Wait for switch bounce to settle, then re-enable ISR
+
+                        // Wait for switch bounce to settle, then re-enable interrupts
                         vTaskDelay(BOUNCE_SETTLE_TIME);
-                        
-                        // Re-enable ISR if still connected to network
-                        if (rain_gauge_enabled) {
-                            // Clear any pending interrupts before re-enabling ISR
-                            gpio_intr_disable(RAIN_GAUGE_GPIO);
-                            gpio_intr_enable(RAIN_GAUGE_GPIO);
-                            
-                            // Clear the interrupt queue of any bounce events that occurred during settle period
-                            uint32_t dummy;
-                            while (xQueueReceive(rain_gauge_evt_queue, &dummy, 0) == pdTRUE) {
-                                // Drain any queued bounce events
-                            }
-                            
-                            esp_err_t ret = gpio_isr_handler_add(RAIN_GAUGE_GPIO, rain_gauge_isr_handler, NULL);
-                            if (ret == ESP_OK) {
-                                ESP_LOGI(RAIN_TAG, "🔊 ISR re-enabled after bounce settle period (queue cleared)");
-                            } else {
-                                ESP_LOGE(RAIN_TAG, "❌ Failed to re-enable ISR: %s", esp_err_to_name(ret));
-                            }
-                        }
+
+                        // Re-enable interrupt line (handler still installed)
+                        gpio_intr_enable(evt.gpio_num);
+                        ESP_LOGI(RAIN_TAG, "🔊 GPIO interrupts re-enabled after settle period");
                     } else {
                         ESP_LOGW(RAIN_TAG, "❌ Rain pulse REJECTED - signal not stable after 20ms (bounce detected)");
                     }
                 } else {
-                    ESP_LOGW(RAIN_TAG, "❌ Rain pulse REJECTED - GPIO%d is LOW during interrupt (expected HIGH, check wiring!)", RAIN_GAUGE_GPIO);
+                    ESP_LOGW(RAIN_TAG, "❌ Rain pulse REJECTED - GPIO%d is LOW during interrupt (expected HIGH, check wiring!)", evt.gpio_num);
                 }
             } else {
-                ESP_LOGW(RAIN_TAG, "⏱️ Rain pulse IGNORED - debounce protection active (%ums < %ums threshold)", 
+                ESP_LOGW(RAIN_TAG, "⏱️ Rain pulse IGNORED - debounce protection active (%ums < %ums threshold)",
                          time_diff_ms, pdTICKS_TO_MS(DEBOUNCE_TIME));
             }
         } else {
@@ -1244,7 +1261,7 @@ static void rain_gauge_task(void *arg)
             TickType_t current_time = xTaskGetTickCount();
             if (rain_gauge_enabled && (current_time - last_debug_time) > DEBUG_INTERVAL) {
                 int current_level = gpio_get_level(RAIN_GAUGE_GPIO);
-                ESP_LOGI(RAIN_TAG, "🔧 Periodic check - GPIO%d level: %d, enabled: YES, total: %.2fmm", 
+                ESP_LOGI(RAIN_TAG, "🔧 Periodic check - GPIO%d level: %d, enabled: YES, total: %.2fmm",
                          RAIN_GAUGE_GPIO, current_level, total_rainfall_mm);
                 last_debug_time = current_time;
             }
@@ -1264,10 +1281,14 @@ static void rain_gauge_enable_isr(void)
     if (ret == ESP_OK) {
         rain_gauge_isr_installed = true;
         ESP_LOGI(RAIN_TAG, "✅ Rain gauge ISR enabled successfully on GPIO%d", RAIN_GAUGE_GPIO);
+        /* Ensure interrupt line is enabled so events will be delivered */
+        gpio_intr_enable(RAIN_GAUGE_GPIO);
     } else if (ret == ESP_ERR_INVALID_STATE) {
         // ISR already installed - this is fine
         rain_gauge_isr_installed = true;
         ESP_LOGI(RAIN_TAG, "✅ Rain gauge ISR already installed, now enabled");
+        /* Make sure the interrupt line is enabled in case it was disabled */
+        gpio_intr_enable(RAIN_GAUGE_GPIO);
     } else {
         ESP_LOGE(RAIN_TAG, "❌ Failed to enable rain gauge ISR: %s", esp_err_to_name(ret));
     }
@@ -1280,16 +1301,13 @@ static void rain_gauge_enable_isr(void)
 static void rain_gauge_disable_isr(void)
 {
     if (rain_gauge_isr_installed) {
-        esp_err_t ret = gpio_isr_handler_remove(RAIN_GAUGE_GPIO);
-        if (ret == ESP_OK) {
-            rain_gauge_isr_installed = false;
-            rain_gauge_enabled = false;
-            ESP_LOGI(RAIN_TAG, "Rain gauge ISR disabled and removed");
-        } else {
-            ESP_LOGW(RAIN_TAG, "Failed to remove rain gauge ISR: %s", esp_err_to_name(ret));
-            // Still disable processing even if removal failed
-            rain_gauge_enabled = false;
-        }
+        /* Do not remove the ISR handler here; removing the handler causes a
+         * gap where pulses cannot be queued. Instead, disable the GPIO
+         * interrupt line so the handler remains installed and can capture
+         * events when re-enabled. */
+        gpio_intr_disable(RAIN_GAUGE_GPIO);
+        rain_gauge_enabled = false;
+        ESP_LOGI(RAIN_TAG, "Rain gauge interrupts disabled (handler kept)");
     } else {
         rain_gauge_enabled = false;
         ESP_LOGI(RAIN_TAG, "Rain gauge ISR already disabled");
@@ -1716,19 +1734,25 @@ static void rain_gauge_init(void)
         ESP_LOGI(RAIN_TAG, "No previous rainfall data found, starting from 0.0mm");
     }
     
-    /* Handle rain wake-up: count the pulse that caused the wake-up from deep sleep */
+    /* Check wake reason and count the wake-causing pulse if present. Record
+     * the tick so we can avoid a duplicate count if an ISR event for the
+     * same edge is queued immediately after. */
     wake_reason_t wake_reason = check_wake_reason();
     if (wake_reason == WAKE_REASON_RAIN) {
         rain_pulse_count++;
         total_rainfall_mm += RAIN_MM_PER_PULSE;
         total_rainfall_mm = roundf(total_rainfall_mm * 100.0f) / 100.0f; // Round to 2 decimals
-        
+
+        /* Record tick to suppress possible duplicate ISR event for the same
+         * physical pulse (500ms window). */
+        wake_pulse_tick = xTaskGetTickCount();
+
         ESP_LOGI(RAIN_TAG, "🌧️ Rain pulse detected during sleep! Pulse #%u, Total: %.2f mm (+%.2f mm)", 
                  rain_pulse_count, total_rainfall_mm, RAIN_MM_PER_PULSE);
-        
+
         // Save to NVS immediately when waking from rain
         save_rainfall_data(total_rainfall_mm, rain_pulse_count);
-        
+
         // Mark that we should report this on next Zigbee connection
         last_reported_rainfall_mm = total_rainfall_mm - 1.0f; // Force threshold reporting
     }
@@ -1753,8 +1777,8 @@ static void rain_gauge_init(void)
     int initial_level = gpio_get_level(RAIN_GAUGE_GPIO);
     ESP_LOGI(RAIN_TAG, "🔌 Initial GPIO%d level: %d (with pull-down)", RAIN_GAUGE_GPIO, initial_level);
     
-    /* Create queue for GPIO events */
-    rain_gauge_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    /* Create queue for GPIO events (include ISR tick to disambiguate duplicates) */
+    rain_gauge_evt_queue = xQueueCreate(10, sizeof(rain_evt_t));
     if (!rain_gauge_evt_queue) {
         ESP_LOGE(RAIN_TAG, "Failed to create event queue");
         return;
@@ -1771,8 +1795,22 @@ static void rain_gauge_init(void)
         ESP_LOGD(RAIN_TAG, "GPIO ISR service installed successfully");
     }
     
-    /* Don't add ISR handler yet - will be added when network connects */
-    ESP_LOGI(RAIN_TAG, "Rain gauge GPIO configured, ISR will be enabled when connected to network");
+    /* Install ISR handler now so pulses occurring after wake (but before
+     * Zigbee network reconnect) are captured and queued. We still keep
+     * `rain_gauge_enabled` false so reporting is deferred until connected.
+     */
+    esp_err_t add_ret = gpio_isr_handler_add(RAIN_GAUGE_GPIO, rain_gauge_isr_handler, NULL);
+    if (add_ret == ESP_OK) {
+        rain_gauge_isr_installed = true;
+        ESP_LOGI(RAIN_TAG, "✅ ISR handler installed early on GPIO%d (will count pulses while offline)", RAIN_GAUGE_GPIO);
+    } else if (add_ret == ESP_ERR_INVALID_STATE) {
+        /* Already installed by some other initialization path - treat as installed */
+        rain_gauge_isr_installed = true;
+        ESP_LOGI(RAIN_TAG, "ℹ️ ISR handler already present for GPIO%d (counting will occur)", RAIN_GAUGE_GPIO);
+    } else {
+        ESP_LOGW(RAIN_TAG, "⚠️ Failed to add ISR handler early: %s - pulses while offline may be missed", esp_err_to_name(add_ret));
+    }
+    ESP_LOGI(RAIN_TAG, "Rain gauge GPIO configured; ISR installed for offline counting, reporting deferred until connected");
     
     /* Create rain gauge task */
     BaseType_t task_ret = xTaskCreate(rain_gauge_task, "rain_gauge_task", 2048, NULL, 5, NULL);
