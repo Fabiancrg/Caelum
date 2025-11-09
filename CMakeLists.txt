@@ -10,8 +10,8 @@ idf_build_set_property(MINIMAL_BUILD ON)
 project(caelum)
 
 # Version configuration
-set(PROJECT_VER "1.2")
-set(BUILD_NUMBER 20)
+set(PROJECT_VER "1.3")
+set(BUILD_NUMBER 0)
 set(MANUFACTURER_CODE "0xFABC")
 set(IMAGE_TYPE "0x1200")
 set(ZIGBEE_STACK_VERSION "0x0003")  # Zigbee 3.0

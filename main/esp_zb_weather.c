@@ -791,18 +791,18 @@ static void esp_zb_task(void *pvParameters)
     
     /* Configure as Sleepy End Device for low power operation */
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;  // How long parent keeps us in child table
-    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = 3000;  // Keep-alive in milliseconds (3 seconds)
+    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = 30000;  // Keep-alive in milliseconds (30 seconds)
     
     esp_zb_init(&zb_nwk_cfg);
     
     /* Configure device as Sleepy End Device (rx_on_when_idle = false) */
     esp_zb_set_rx_on_when_idle(false);
     
-    /* Set long poll interval for battery saving (7500ms = 7.5 seconds) */
-    esp_zb_sleep_set_threshold(7500);  // Only poll parent every 7.5 seconds when idle
+    /* Set long poll interval for battery saving (15000ms = 15 seconds) */
+    esp_zb_sleep_set_threshold(15000);  // Only poll parent every 15 seconds when idle
     
     ESP_LOGI(TAG, "🔋 Configured as Sleepy End Device (SED) - rx_on_when_idle=false");
-    ESP_LOGI(TAG, "📡 Poll interval: 7.5 seconds (optimized for battery life)");
+    ESP_LOGI(TAG, "📡 Poll interval: 15 seconds (optimized for battery life)");
     ESP_LOGI(TAG, "⏱️  Parent timeout: 64 minutes");
     
     /* Create endpoint list */
