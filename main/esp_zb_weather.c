@@ -30,6 +30,7 @@
 #include "esp_ota_ops.h"
 #include "esp_app_format.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
 /* Generated header with FW_VERSION / FW_DATE_CODE - created at configure time */
 #include "version.h"
 
@@ -367,6 +368,36 @@ static esp_err_t deferred_driver_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief Initialize power management for light sleep
+ */
+static esp_err_t esp_zb_power_save_init(void)
+{
+    esp_err_t rc = ESP_OK;
+#ifdef CONFIG_PM_ENABLE
+    int cur_cpu_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = cur_cpu_freq_mhz,
+        .min_freq_mhz = cur_cpu_freq_mhz,
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+        .light_sleep_enable = true
+#endif
+    };
+    rc = esp_pm_configure(&pm_config);
+    ESP_LOGI(TAG, "Power management configured: max=%dMHz, min=%dMHz, light_sleep=%s",
+             cur_cpu_freq_mhz, cur_cpu_freq_mhz, 
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+             "enabled"
+#else
+             "disabled"
+#endif
+    );
+#else
+    ESP_LOGW(TAG, "CONFIG_PM_ENABLE not set - light sleep may not work properly");
+#endif
+    return rc;
+}
+
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
     ESP_RETURN_ON_FALSE(esp_zb_bdb_start_top_level_commissioning(mode_mask) == ESP_OK, , TAG, "Failed to start Zigbee commissioning");
@@ -497,6 +528,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGW(TAG, "🔄 Connection attempt %d/%d failed", connection_retry_count, MAX_CONNECTION_RETRIES);
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
         }
+        break;
+    case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
+        ESP_LOGI(TAG, "Zigbee can sleep");
+        esp_zb_sleep_now();
         break;
     default:
         ESP_LOGI(TAG, "ZDO signal: %s (0x%x), status: %s", esp_zb_zdo_signal_to_string(sig_type), sig_type,
@@ -786,13 +821,15 @@ static void fill_zcl_string(char *buf, size_t bufsize, const char *src) {
 
 static void esp_zb_task(void *pvParameters)
 {
-    /* Initialize Zigbee stack as Sleepy End Device (SED) */
+    // Initialize Zigbee stack as Sleepy End Device (SED)
     esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZED_CONFIG();
     
-    /* Configure as Sleepy End Device for low power operation */
+    // Configure as Sleepy End Device for low power operation 
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;  // How long parent keeps us in child table
     zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = 30000;  // Keep-alive in milliseconds (30 seconds)
     
+    /* Enable zigbee light sleep */
+    esp_zb_sleep_enable(true);
     esp_zb_init(&zb_nwk_cfg);
     
     /* Configure device as Sleepy End Device (rx_on_when_idle = false) */
@@ -1071,8 +1108,10 @@ static void esp_zb_task(void *pvParameters)
     
     /* Note: Button monitoring is now interrupt-based, no polling task needed */
     
-    /* Start main Zigbee stack loop - will run until light sleep scheduled task executes */
-    ESP_LOGI(TAG, "⏳ Starting Zigbee stack, will enter light sleep in 7 seconds...");
+    /* Start Zigbee stack main loop - required for Zigbee operation
+     * Sleep happens automatically via ESP_ZB_COMMON_SIGNAL_CAN_SLEEP signal */
+    ESP_LOGI(TAG, "⏳ Starting Zigbee stack main loop...");
+    ESP_LOGI(TAG, "💤 Light sleep will be triggered via ESP_ZB_COMMON_SIGNAL_CAN_SLEEP signal");
     esp_zb_stack_main_loop();
 }
 
@@ -1174,7 +1213,8 @@ static void bme280_read_and_report(uint8_t param)
     }
     
     // Schedule next reading (every 30 seconds)
-    esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 30000);
+    // Do not scheduled next report
+    // esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 30000);
 }
 
 /* Rain gauge implementation */
@@ -1917,6 +1957,9 @@ void app_main(void)
     /* Initialize OTA */
     ESP_ERROR_CHECK(esp_zb_ota_init());
     
+    /* Initialize power management for light sleep */
+    ESP_ERROR_CHECK(esp_zb_power_save_init());
+    
     /* Check wake-up reason and print statistics */
     wake_reason_t wake_reason = check_wake_reason();
     print_wake_statistics();
@@ -1946,12 +1989,13 @@ void app_main(void)
         ESP_LOGI(TAG, "📦 Firmware: %s (Date: %s %s)", app_desc_main.version, app_desc_main.date, app_desc_main.time);
     }
     
-#ifdef OTA_FILE_VERSION
-    ESP_LOGI(TAG, "⚙️  OTA: Version=0x%08lX, Manufacturer=0x%04X, ImageType=0x%04X", 
-             (unsigned long)OTA_FILE_VERSION, OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
-#else
-    ESP_LOGI(TAG, "⚙️  OTA: Manufacturer=0x%04X, ImageType=0x%04X", OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
-#endif
+    #ifdef OTA_FILE_VERSION
+        ESP_LOGI(TAG, "⚙️  OTA: Version=0x%08lX, Manufacturer=0x%04X, ImageType=0x%04X", 
+                (unsigned long)OTA_FILE_VERSION, OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
+    #else
+        ESP_LOGI(TAG, "⚙️  OTA: Manufacturer=0x%04X, ImageType=0x%04X", OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
+    #endif
+
     ESP_LOGI(TAG, "Wake reason: %s", 
              wake_reason == WAKE_REASON_TIMER ? "TIMER" :
              wake_reason == WAKE_REASON_RAIN ? "RAIN" :
