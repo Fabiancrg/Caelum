@@ -270,11 +270,9 @@ static const char *RAIN_TAG = "RAIN_GAUGE";
 static bool rain_gauge_enabled = false;  // Only enable when connected to network
 static bool rain_gauge_isr_installed = false;  // Track ISR installation state
 static float last_reported_rainfall_mm = 0.0f;  // Track last reported value for 1mm threshold
-static TickType_t last_report_time = 0;  // Track last report time for hourly reporting
-/* Duplicate suppression window (ms) after wake-count to avoid counting the
- * same physical pulse twice when the ISR event for that edge is queued. */
-#define DUPLICATE_WAKE_MS 50
-static TickType_t wake_pulse_tick = 0;
+
+/* Rain reporting thresholds */
+#define REPORT_THRESHOLD_MM 1.0f  // Report every 1mm of rainfall
 
 /* Sleep configuration variables */
 static uint32_t sleep_duration_seconds = SLEEP_DURATION_S;  // Default 15 minutes (900 seconds)
@@ -297,7 +295,6 @@ static void factory_reset_device(uint8_t param);
 static void bme280_read_and_report(uint8_t param);
 static void prepare_for_light_sleep(uint8_t param);
 static void sed_wake_and_report(uint8_t param);
-static void check_ota_status(uint8_t param);
 static esp_err_t sleep_config_load(void);
 static esp_err_t sleep_config_save(void);
 static void rain_gauge_init(void);
@@ -306,11 +303,9 @@ static void rain_gauge_task(void *arg);
 static void rain_gauge_zigbee_update(uint8_t param);
 static void rain_gauge_enable_isr(void);
 static void rain_gauge_disable_isr(void);
-static bool rain_gauge_should_report(void);
 static esp_err_t battery_adc_init(void);
 static void battery_read_and_report(uint8_t param);
 static void sleep_duration_report(uint8_t param);
-static void rain_gauge_hourly_check(uint8_t param);
 static esp_err_t deferred_driver_init(void)
 {
     /* Initialize builtin button with callback for factory reset */
@@ -448,20 +443,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                 esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 3000); // Report battery in 3 seconds
                 esp_zb_scheduler_alarm((esp_zb_callback_t)sleep_duration_report, 0, 4000); // Report sleep duration in 4 seconds
                 
-                /* Check if OTA is in progress before scheduling light sleep */
-                if (esp_zb_ota_is_active()) {
-                    ESP_LOGW(TAG, "🔄 OTA update in progress - staying awake, light sleep disabled");
-                    sleep_scheduled = false; // Don't schedule sleep during OTA
-                    /* Schedule periodic OTA status check */
-                    esp_zb_scheduler_alarm((esp_zb_callback_t)check_ota_status, 0, 5000); // Check every 5 seconds
-                } else {
-                    /* Schedule light sleep after reporting window */
-                    if (!sleep_scheduled) {
-                        ESP_LOGI(TAG, "⏰ Scheduling light sleep after reporting window");
-                        esp_zb_scheduler_alarm((esp_zb_callback_t)prepare_for_light_sleep, 0, 15000);
-                        sleep_scheduled = true;
-                    }
-                }
+                /* In SED mode with automatic sleep, just schedule next periodic report */
+                ESP_LOGI(TAG, "� SED automatic sleep enabled - device will sleep when idle");
+                ESP_LOGI(TAG, "⏰ Next sensor report in %d seconds", sleep_duration_seconds);
+                esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, sleep_duration_seconds * 1000);
             }
         } else {
             /* commissioning failed - try to rejoin */
@@ -500,20 +485,12 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 3000); // Report battery in 3 seconds
             esp_zb_scheduler_alarm((esp_zb_callback_t)sleep_duration_report, 0, 4000); // Report sleep duration in 4 seconds
             
-            /* Check if OTA is in progress before scheduling light sleep */
-            if (esp_zb_ota_is_active()) {
-                ESP_LOGW(TAG, "🔄 OTA update in progress - staying awake, light sleep disabled");
-                sleep_scheduled = false; // Don't schedule sleep during OTA
-                /* Schedule periodic OTA status check */
-                esp_zb_scheduler_alarm((esp_zb_callback_t)check_ota_status, 0, 5000); // Check every 5 seconds
-            } else {
-                /* Now that we're connected, schedule normal light sleep after allowing time for data reporting */
-                if (!sleep_scheduled) {
-                    ESP_LOGI(TAG, "📡 Network connected! Scheduling sleep after sensor data reporting (5 seconds)");
-                    esp_zb_scheduler_alarm((esp_zb_callback_t)prepare_for_light_sleep, 0, 15000); // 15 seconds for reporting
-                    sleep_scheduled = true;
-                }
-            }
+            /* In SED mode with automatic sleep, we don't manually schedule sleep.
+             * The Zigbee stack will automatically enter light sleep when idle.
+             * Just schedule the next periodic sensor report. */
+            ESP_LOGI(TAG, "💤 SED automatic sleep enabled - device will sleep when idle");
+            ESP_LOGI(TAG, "⏰ Next sensor report in %d seconds", sleep_duration_seconds);
+            esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, sleep_duration_seconds * 1000);
         } else {
             ESP_LOGI(TAG, "Network steering was not successful (status: %s)", esp_err_to_name(err_status));
             
@@ -792,25 +769,6 @@ static void sed_wake_and_report(uint8_t param)
     }
 }
 
-/**
- * @brief Check OTA status and reschedule light sleep when OTA completes
- */
-static void check_ota_status(uint8_t param)
-{
-    if (esp_zb_ota_is_active()) {
-        /* OTA still in progress - stay awake and check again in 5 seconds */
-        ESP_LOGI(TAG, "🔄 OTA update in progress, staying awake...");
-        esp_zb_scheduler_alarm((esp_zb_callback_t)check_ota_status, 0, 5000);
-    } else {
-        /* OTA completed or not active - schedule light sleep */
-        ESP_LOGI(TAG, "✅ OTA check complete, scheduling light sleep");
-        if (!sleep_scheduled && zigbee_network_connected) {
-            esp_zb_scheduler_alarm((esp_zb_callback_t)prepare_for_light_sleep, 0, 15000);
-            sleep_scheduled = true;
-        }
-    }
-}
-
 // Helper to fill a Zigbee ZCL string (first byte = length, then chars)
 static void fill_zcl_string(char *buf, size_t bufsize, const char *src) {
     size_t len = strlen(src);
@@ -826,7 +784,7 @@ static void esp_zb_task(void *pvParameters)
     
     // Configure as Sleepy End Device for low power operation 
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;  // How long parent keeps us in child table
-    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = 30000;  // Keep-alive in milliseconds (30 seconds)
+    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = 7500;  // Keep-alive polling interval (7.5 seconds)
     
     /* Enable zigbee light sleep */
     esp_zb_sleep_enable(true);
@@ -835,11 +793,11 @@ static void esp_zb_task(void *pvParameters)
     /* Configure device as Sleepy End Device (rx_on_when_idle = false) */
     esp_zb_set_rx_on_when_idle(false);
     
-    /* Set long poll interval for battery saving (15000ms = 15 seconds) */
-    esp_zb_sleep_set_threshold(15000);  // Only poll parent every 15 seconds when idle
+    /* Set sleep threshold to match keep_alive for consistent polling */
+    esp_zb_sleep_set_threshold(7500);  // Sleep after 7.5s idle, wake every 5s to poll
     
     ESP_LOGI(TAG, "🔋 Configured as Sleepy End Device (SED) - rx_on_when_idle=false");
-    ESP_LOGI(TAG, "📡 Poll interval: 15 seconds (optimized for battery life)");
+    ESP_LOGI(TAG, "📡 Poll interval: 7.5 seconds (keep_alive + sleep_threshold aligned)");
     ESP_LOGI(TAG, "⏱️  Parent timeout: 64 minutes");
     
     /* Create endpoint list */
@@ -1092,26 +1050,17 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
     ESP_ERROR_CHECK(esp_zb_start(false));
     
-    /* Start BME280 periodic reading (initial delay 5 seconds) */
-    esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 5000);
-    
-    /* Schedule light sleep entry - but only after network connection or extended timeout */
-    if (zigbee_network_connected) {
-        /* Already connected, can sleep normally after initial operations */
-        esp_zb_scheduler_alarm((esp_zb_callback_t)prepare_for_light_sleep, 0, 15000); // 15 seconds
-    } else {
-        /* Not connected yet, wait longer for join process and retry connection attempts */
-        ESP_LOGI(TAG, "📡 Network not connected, extending wake time for join process (60 seconds)");
-        esp_zb_scheduler_alarm((esp_zb_callback_t)prepare_for_light_sleep, 0, 60000); // 60 seconds for join
-        sleep_scheduled = true;
-    }
+    /* In SED mode with automatic sleep, we don't manually schedule sleep operations.
+     * The initial sensor report will be triggered after network join via the signal handler.
+     * The device will automatically enter light sleep when idle (no Zigbee activity). */
+    ESP_LOGI(TAG, "� SED automatic sleep mode configured - device will sleep when idle");
     
     /* Note: Button monitoring is now interrupt-based, no polling task needed */
     
     /* Start Zigbee stack main loop - required for Zigbee operation
      * Sleep happens automatically via ESP_ZB_COMMON_SIGNAL_CAN_SLEEP signal */
     ESP_LOGI(TAG, "⏳ Starting Zigbee stack main loop...");
-    ESP_LOGI(TAG, "💤 Light sleep will be triggered via ESP_ZB_COMMON_SIGNAL_CAN_SLEEP signal");
+    ESP_LOGI(TAG, "💤 Light sleep will be triggered automatically when stack is idle");
     esp_zb_stack_main_loop();
 }
 
@@ -1212,9 +1161,11 @@ static void bme280_read_and_report(uint8_t param)
         ESP_LOGE(TAG, "Failed to read pressure: %s", esp_err_to_name(ret));
     }
     
-    // Schedule next reading (every 30 seconds)
-    // Do not scheduled next report
-    // esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 30000);
+    /* In SED mode with automatic sleep, schedule next periodic report.
+     * Device will automatically sleep between reports when idle. */
+    uint32_t next_report_ms = sleep_duration_seconds * 1000;
+    ESP_LOGI(TAG, "⏰ Next sensor report scheduled in %d seconds", sleep_duration_seconds);
+    esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, next_report_ms);
 }
 
 /* Rain gauge implementation */
@@ -1243,109 +1194,50 @@ static void rain_gauge_task(void *arg)
 {
     rain_evt_t evt;
     TickType_t last_pulse_time = 0;
-    //TickType_t last_debug_time = 0;
-    const TickType_t DEBOUNCE_TIME = pdMS_TO_TICKS(200); // 200ms debounce - more than adequate for rain gauge
-    const TickType_t BOUNCE_SETTLE_TIME = pdMS_TO_TICKS(200); // 200ms settle to reduce gap while still debouncing
+    const TickType_t DEBOUNCE_TIME = pdMS_TO_TICKS(200); // 200ms debounce
     
     ESP_LOGI(RAIN_TAG, "Rain gauge task started, waiting for events...");
 
     for (;;) {
-        // Wait for queue with timeout to allow periodic debug logging
-        if (xQueueReceive(rain_gauge_evt_queue, &evt, pdMS_TO_TICKS(100))) {
+        // Wait indefinitely for rain events - allows device to sleep when no rain
+        if (xQueueReceive(rain_gauge_evt_queue, &evt, portMAX_DELAY)) {
             TickType_t current_time = evt.tick;
-            int pin_level_isr = gpio_get_level(evt.gpio_num);
-
-            ESP_LOGI(RAIN_TAG, "🔍 ISR TRIGGERED on GPIO%u! GPIO level: %d, enabled: %s",
-                     evt.gpio_num, pin_level_isr, rain_gauge_enabled ? "YES" : "NO");
-
-            // Allow counting pulses even when not yet connected to network.
-            // This prevents losing pulses that occur after wake but before Zigbee rejoin.
-            if (!rain_gauge_enabled) {
-                ESP_LOGW(RAIN_TAG, "⚠️ Rain gauge interrupt received while not connected — counting locally but not reporting");
-                /* fall through to counting/debounce logic below; reporting to Zigbee
-                 * will be gated by checking `rain_gauge_enabled` before scheduling
-                 * any Zigbee updates. */
-            }
-
-            uint32_t time_diff_ms = pdTICKS_TO_MS(current_time - last_pulse_time);
-
-            ESP_LOGI(RAIN_TAG, "🕐 Time since last pulse: %u ms (debounce threshold: %u ms)",
-                     time_diff_ms, pdTICKS_TO_MS(DEBOUNCE_TIME));
-
-            // Reasonable debounce check - 100ms minimum between pulses
+            
+            // Simple debounce check
             if ((current_time - last_pulse_time) > DEBOUNCE_TIME) {
-                int pin_level = gpio_get_level(evt.gpio_num);
-                ESP_LOGI(RAIN_TAG, "🔌 GPIO%d level: %d", evt.gpio_num, pin_level);
-
-                // Enhanced verification: check pin is high and wait for signal stability
-                if (pin_level == 1) {
-                    vTaskDelay(pdMS_TO_TICKS(20)); // Wait 20ms for signal stability
-
-                    int pin_level_after = gpio_get_level(evt.gpio_num);
-                    ESP_LOGI(RAIN_TAG, "🔌 GPIO%d level after 20ms: %d", evt.gpio_num, pin_level_after);
-
-                    // Verify signal is still stable - for rain gauge, we want rock-solid detection
-                    if (pin_level_after == 1) {
-                        // Temporarily disable IRQ line to prevent bounce interrupts
-                        // Keep ISR handler installed so events after the settle
-                        // window will still be captured.
-                        ESP_LOGI(RAIN_TAG, "🔇 Disabling GPIO interrupts for %u ms to prevent bounce", pdTICKS_TO_MS(BOUNCE_SETTLE_TIME));
-                        gpio_intr_disable(evt.gpio_num);
-
-                        last_pulse_time = current_time;
-                        /* Avoid double-counting the wake-causing pulse: if the
-                         * ISR event corresponds to the same physical pulse that
-                         * we already counted on wake (within DUPLICATE_WAKE_MS),
-                         * skip it. We compare using the tick provided by the ISR. */
-                        if (wake_pulse_tick != 0 && (evt.tick > wake_pulse_tick) &&
-                            ((evt.tick - wake_pulse_tick) <= pdMS_TO_TICKS(DUPLICATE_WAKE_MS))) {
-                            ESP_LOGI(RAIN_TAG, "ℹ️ Duplicate ISR event within wake window - skipping duplicate");
-                            /* Clear the marker so subsequent pulses are counted */
-                            wake_pulse_tick = 0;
-                        } else {
-                            rain_pulse_count++;
-                            total_rainfall_mm += RAIN_MM_PER_PULSE;
-                        }
-
-                        // Round to 2 decimal places to avoid floating-point precision accumulation
-                        total_rainfall_mm = roundf(total_rainfall_mm * 100.0f) / 100.0f;
-
-                        /* Flash LED white to indicate rain pulse detected */
-                        debug_led_rain_flash();
-
-                        ESP_LOGI(RAIN_TAG, "🌧️ Rain pulse #%u detected! Total: %.2f mm (+%.2f mm)",
-                                 rain_pulse_count, total_rainfall_mm, RAIN_MM_PER_PULSE);
-
-                        // Save to NVS every 10 pulses (via sleep manager for unified storage)
-                        if (rain_pulse_count % 10 == 0) {
-                            save_rainfall_data(total_rainfall_mm, rain_pulse_count);
-                        }
-
-                        // Check if we should report to Zigbee (every hour or 1mm increment)
-                        // Only schedule Zigbee reporting when the rain gauge is enabled
-                        // (i.e. device connected to coordinator). If we're offline,
-                        // still update local counters and persist, but defer reporting.
-                        if (rain_gauge_enabled && rain_gauge_should_report()) {
+                // Verify GPIO is actually high (reed switch closed)
+                if (gpio_get_level(evt.gpio_num) == 1) {
+                    // Valid pulse - update counters
+                    last_pulse_time = current_time;
+                    rain_pulse_count++;
+                    total_rainfall_mm += RAIN_MM_PER_PULSE;
+                    total_rainfall_mm = roundf(total_rainfall_mm * 100.0f) / 100.0f; // Round to 2 decimals
+                    
+                    /* Flash LED to indicate rain pulse */
+                    debug_led_rain_flash();
+                    
+                    ESP_LOGI(RAIN_TAG, "🌧️ Rain pulse #%u: %.2f mm total (+%.2f mm)",
+                             rain_pulse_count, total_rainfall_mm, RAIN_MM_PER_PULSE);
+                    
+                    // Save to NVS every 10 pulses
+                    if (rain_pulse_count % 10 == 0) {
+                        save_rainfall_data(total_rainfall_mm, rain_pulse_count);
+                    }
+                    
+                    // Report to Zigbee if connected and threshold reached (1mm)
+                    if (rain_gauge_enabled) {
+                        float delta = total_rainfall_mm - last_reported_rainfall_mm;
+                        if (delta >= REPORT_THRESHOLD_MM) {
+                            ESP_LOGI(RAIN_TAG, "📡 Threshold reached (%.2f mm), reporting to Zigbee", delta);
                             esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_zigbee_update, 0, 10);
-                            last_reported_rainfall_mm = total_rainfall_mm;
-                            last_report_time = current_time;
                         }
-
-                        // Wait for switch bounce to settle, then re-enable interrupts
-                        vTaskDelay(BOUNCE_SETTLE_TIME);
-
-                        // Re-enable interrupt line (handler still installed)
-                        gpio_intr_enable(evt.gpio_num);
-                        ESP_LOGI(RAIN_TAG, "🔊 GPIO interrupts re-enabled after settle period");
-                    } else {
-                        ESP_LOGW(RAIN_TAG, "❌ Rain pulse REJECTED - signal not stable after 20ms (bounce detected)");
                     }
                 } else {
-                    ESP_LOGW(RAIN_TAG, "❌ Rain pulse REJECTED - GPIO%d is LOW during interrupt (expected HIGH, check wiring!)", evt.gpio_num);
+                    ESP_LOGD(RAIN_TAG, "Pulse rejected - GPIO low (bounce)");
                 }
             } else {
-                ESP_LOGW(RAIN_TAG, "⏱️ Rain pulse IGNORED - debounce protection active (%ums < %ums threshold)",
-                         time_diff_ms, pdTICKS_TO_MS(DEBOUNCE_TIME));
+                ESP_LOGD(RAIN_TAG, "Pulse ignored - debounce active (%u ms)", 
+                         pdTICKS_TO_MS(current_time - last_pulse_time));
             }
         }
     }
@@ -1396,49 +1288,6 @@ static void rain_gauge_disable_isr(void)
     }
 }
 
-static bool rain_gauge_should_report(void)
-{
-    TickType_t current_time = xTaskGetTickCount();
-    const TickType_t HOUR_MS = pdMS_TO_TICKS(3600000); // 1 hour in milliseconds
-    const float REPORT_THRESHOLD_MM = 1.0f; // Report every 1mm
-    
-    // Check if 1 hour has passed since last report
-    bool hour_passed = (current_time - last_report_time) >= HOUR_MS;
-    
-    // Check if we've accumulated 1mm more rainfall
-    bool threshold_reached = (total_rainfall_mm - last_reported_rainfall_mm) >= REPORT_THRESHOLD_MM;
-    
-    if (hour_passed) {
-        ESP_LOGI(RAIN_TAG, "📊 Hourly report triggered (%.2f mm total)", total_rainfall_mm);
-        return true;
-    } else if (threshold_reached) {
-        ESP_LOGI(RAIN_TAG, "📊 Rainfall threshold report triggered (+%.2f mm, %.2f mm total)", 
-                 total_rainfall_mm - last_reported_rainfall_mm, total_rainfall_mm);
-        return true;
-    }
-    
-    return false;
-}
-
-static void rain_gauge_hourly_check(uint8_t param)
-{
-    // This function is called every hour to ensure reporting even with very light rain
-    if (rain_gauge_enabled && (total_rainfall_mm != last_reported_rainfall_mm)) {
-        ESP_LOGI(RAIN_TAG, "📊 Periodic hourly check - reporting current rainfall");
-        esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_zigbee_update, 0, 10);
-        last_reported_rainfall_mm = total_rainfall_mm;
-        last_report_time = xTaskGetTickCount();
-    }
-    
-    // Debug: Check GPIO state and ISR status
-    int gpio_level = gpio_get_level(RAIN_GAUGE_GPIO);
-    ESP_LOGI(RAIN_TAG, "🔍 Hourly debug - GPIO%d level: %d, ISR installed: %s, enabled: %s", 
-             RAIN_GAUGE_GPIO, gpio_level, rain_gauge_isr_installed ? "YES" : "NO", rain_gauge_enabled ? "YES" : "NO");
-    
-    // Schedule next hourly check
-    esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_hourly_check, 0, 3600000); // 1 hour
-}
-
 static void rain_gauge_zigbee_update(uint8_t param)
 {
     // Round to 2 decimal places to avoid floating-point precision issues
@@ -1449,7 +1298,8 @@ static void rain_gauge_zigbee_update(uint8_t param)
                                                  &rounded_rainfall, true);  // Force reporting
     
     if (ret == ESP_OK) {
-        ESP_LOGI(RAIN_TAG, "✅ Rainfall total %.2f mm reported to Zigbee", rounded_rainfall);
+        ESP_LOGI(RAIN_TAG, "✅ Rain reported: %.2f mm", rounded_rainfall);
+        last_reported_rainfall_mm = total_rainfall_mm;  // Update for next threshold check
     } else {
         ESP_LOGE(RAIN_TAG, "❌ Failed to report rainfall: %s", esp_err_to_name(ret));
     }
@@ -1843,10 +1693,6 @@ static void rain_gauge_init(void)
         total_rainfall_mm += RAIN_MM_PER_PULSE;
         total_rainfall_mm = roundf(total_rainfall_mm * 100.0f) / 100.0f; // Round to 2 decimals
 
-        /* Record tick to suppress possible duplicate ISR event for the same
-         * physical pulse (500ms window). */
-        wake_pulse_tick = xTaskGetTickCount();
-
         ESP_LOGI(RAIN_TAG, "🌧️ Rain pulse detected during sleep! Pulse #%u, Total: %.2f mm (+%.2f mm)", 
                  rain_pulse_count, total_rainfall_mm, RAIN_MM_PER_PULSE);
 
@@ -1921,7 +1767,6 @@ static void rain_gauge_init(void)
     
     /* Initialize reporting variables */
     last_reported_rainfall_mm = total_rainfall_mm;
-    last_report_time = xTaskGetTickCount();
     
     /* Add continuous GPIO monitoring for debugging */
     ESP_LOGI(RAIN_TAG, "Rain gauge initialized successfully. Current total: %.2f mm", total_rainfall_mm);
@@ -1930,9 +1775,6 @@ static void rain_gauge_init(void)
     
     /* Report initial value to Zigbee after device joins network */
     esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_zigbee_update, 0, 10000); // 10 seconds delay
-    
-    /* Start hourly reporting timer */
-    esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_hourly_check, 0, 3600000); // First check in 1 hour
 }
 
 void app_main(void)
