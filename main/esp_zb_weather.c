@@ -197,6 +197,10 @@ static float last_reported_rainfall_mm = 0.0f;  // Track last reported value for
 /* Rain reporting thresholds */
 #define REPORT_THRESHOLD_MM 1.0f  // Report every 1mm of rainfall
 
+/* Periodic reporting timer */
+static esp_timer_handle_t periodic_report_timer = NULL;
+#define PERIODIC_READING_INTERVAL_MS (SLEEP_DURATION_MINUTES * 60 * 1000)  // 15 minutes in milliseconds
+
 /* Network connection status (zigbee_network_connected declared earlier for LED functions) */
 static uint32_t connection_retry_count = 0;
 #define NETWORK_RETRY_SLEEP_DURATION    30      // 30 seconds for network retry
@@ -208,6 +212,9 @@ static uint32_t connection_retry_count = 0;
 static void builtin_button_callback(button_action_t action);
 static void factory_reset_device(uint8_t param);
 static void bme280_read_and_report(uint8_t param);
+static void periodic_sensor_report_callback(void *arg);
+static void start_periodic_reading(void);
+static void stop_periodic_reading(void);
 static void rain_gauge_init(void);
 static void rain_gauge_isr_handler(void *arg);
 static void rain_gauge_task(void *arg);
@@ -379,6 +386,11 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_zigbee_update, 0, 2000); // Report rainfall in 2 seconds
             esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 3000); // Report battery in 3 seconds
             
+            /* Start periodic sensor reading timer for 15-minute intervals.
+             * This ensures sensors are read regularly and attributes stay updated.
+             * Actual reporting to coordinator is controlled by Zigbee reporting configuration. */
+            start_periodic_reading();
+            
             /* Deinitialize LED after successful join - LED kept on for 5 seconds to confirm join, then powered down */
             ESP_LOGI(TAG, "💡 LED will power down in 5 seconds to save battery");
             esp_zb_scheduler_alarm((esp_zb_callback_t)debug_led_deinit, 0, 5000); // Power down LED in 5 seconds
@@ -395,6 +407,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             /* Disable rain gauge when not connected */
             rain_gauge_disable_isr();
             ESP_LOGW(RAIN_TAG, "Rain gauge disabled - not connected to network");
+            
+            /* Stop periodic sensor reading timer when disconnected */
+            stop_periodic_reading();
             
             /* Check if max retries reached */
             if (connection_retry_count >= MAX_CONNECTION_RETRIES) {
@@ -889,15 +904,79 @@ static void bme280_read_and_report(uint8_t param)
     /* BME280 automatically returns to sleep mode after forced measurement.
      * No explicit sleep call needed - sensor is already in low-power state. */
     
-    /* DO NOT reschedule here! Continuous scheduler alarms prevent light sleep.
-     * Instead, reporting will be triggered by:
-     * 1. Zigbee poll/wake cycles (keep_alive interval)
-     * 2. Attribute reporting configuration
-     * 3. Manual triggers when needed (rain events, etc.)
+    /* This function can be called by:
+     * 1. Initial network join (one-time)
+     * 2. Periodic timer (every 15 minutes)
+     * 3. Coordinator's reporting configuration (based on min/max interval)
      * 
-     * This allows the device to enter light sleep between Zigbee polls.
+     * The periodic timer ensures regular updates even if coordinator doesn't
+     * configure automatic reporting, while coordinator config can provide
+     * additional event-driven reporting based on value changes.
      */
-    ESP_LOGI(TAG, "📊 Sensor data reported. Device will now enter light sleep until next Zigbee poll.");
+    ESP_LOGI(TAG, "📊 Sensor data reported. Device will enter light sleep until next event.");
+}
+
+/* Periodic sensor reading timer callback */
+static void periodic_sensor_report_callback(void *arg)
+{
+    if (zigbee_network_connected) {
+        ESP_LOGI(TAG, "⏰ Periodic sensor read timer fired (15-minute interval)");
+        /* Schedule sensor reads via Zigbee scheduler to avoid ISR context issues.
+         * Note: These functions update Zigbee attributes but don't force reporting.
+         * The Zigbee stack will automatically send reports based on the coordinator's
+         * reporting configuration (min/max intervals, reportable change thresholds). */
+        esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 100);
+        esp_zb_scheduler_alarm((esp_zb_callback_t)rain_gauge_zigbee_update, 0, 200);
+        /* Battery is read hourly based on its own time tracking */
+        esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 300);
+    } else {
+        ESP_LOGW(TAG, "⏰ Periodic timer fired but network disconnected - skipping sensor read");
+    }
+}
+
+/* Start periodic sensor reading timer */
+static void start_periodic_reading(void)
+{
+    if (periodic_report_timer != NULL) {
+        ESP_LOGW(TAG, "Periodic sensor reading timer already running");
+        return;
+    }
+    
+    const esp_timer_create_args_t periodic_timer_args = {
+        .callback = &periodic_sensor_report_callback,
+        .name = "periodic_read"
+    };
+    
+    esp_err_t ret = esp_timer_create(&periodic_timer_args, &periodic_report_timer);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create periodic sensor reading timer: %s", esp_err_to_name(ret));
+        return;
+    }
+    
+    /* Start periodic timer - fires every 15 minutes to read sensors and update attributes.
+     * Actual reporting to coordinator is controlled by Zigbee reporting configuration. */
+    ret = esp_timer_start_periodic(periodic_report_timer, PERIODIC_READING_INTERVAL_MS * 1000ULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start periodic sensor reading timer: %s", esp_err_to_name(ret));
+        esp_timer_delete(periodic_report_timer);
+        periodic_report_timer = NULL;
+        return;
+    }
+    
+    ESP_LOGI(TAG, "⏰ Periodic sensor reading started: every %d minutes (%lu ms)", 
+             SLEEP_DURATION_MINUTES, PERIODIC_READING_INTERVAL_MS);
+    ESP_LOGI(TAG, "📡 Reporting to coordinator controlled by Zigbee reporting configuration");
+}
+
+/* Stop periodic sensor reading timer */
+static void stop_periodic_reading(void)
+{
+    if (periodic_report_timer != NULL) {
+        esp_timer_stop(periodic_report_timer);
+        esp_timer_delete(periodic_report_timer);
+        periodic_report_timer = NULL;
+        ESP_LOGI(TAG, "⏰ Periodic sensor reading timer stopped");
+    }
 }
 
 /* Rain gauge implementation */
