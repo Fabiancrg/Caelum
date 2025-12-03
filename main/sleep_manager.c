@@ -11,15 +11,11 @@
 
 #include "esp_sleep.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "nvs_flash.h"
 #include "nvs.h"
-#include "esp_zigbee_core.h"
 #include "esp_zb_weather.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char *SLEEP_TAG = "SLEEP";
 
@@ -178,92 +174,20 @@ bool load_rainfall_data(float *rainfall_mm, uint32_t *pulse_count)
     return false;
 }
 
-/**
- * @brief Enter light sleep mode
- * @param duration_seconds Sleep duration in seconds (0 = infinite)
- * @param enable_gpio_wakeup Enable GPIO wake-up for rain detection
+/* NOTE: Manual enter_light_sleep() function removed.
+ * 
+ * For Zigbee Sleepy End Device (SED) mode, the Zigbee stack handles light sleep
+ * automatically via the ESP_ZB_COMMON_SIGNAL_CAN_SLEEP signal:
+ * 
+ * 1. esp_zb_sleep_enable(true) is called once at initialization
+ * 2. When Zigbee stack is idle, it signals ESP_ZB_COMMON_SIGNAL_CAN_SLEEP
+ * 3. The signal handler calls esp_zb_sleep_now() which triggers internal light sleep
+ * 4. Device wakes automatically on keep_alive interval (7.5s) to poll parent
+ * 5. Device also wakes on incoming Zigbee messages or GPIO interrupts
+ * 
+ * DO NOT manually call esp_light_sleep_start() as it conflicts with the
+ * Zigbee stack's power management.
  */
-void enter_light_sleep(uint32_t duration_seconds, bool enable_gpio_wakeup)
-{
-    ESP_LOGI(SLEEP_TAG, "🌙 Preparing to enter light sleep...");
-    
-    /* Configure timer wake-up if duration specified */
-    if (duration_seconds > 0) {
-        ESP_LOGI(SLEEP_TAG, "⏰ Timer wake-up: %lu seconds (%lu minutes)", 
-                 duration_seconds, duration_seconds / 60);
-        esp_sleep_enable_timer_wakeup(duration_seconds * 1000000ULL); // microseconds
-    }
-    
-    /* Configure GPIO wake-up for rain detection */
-    bool gpio_wakeup_enabled = false;
-    if (enable_gpio_wakeup) {
-        // For light sleep, we can use any GPIO, not just RTC-capable ones
-        esp_sleep_enable_gpio_wakeup();
-        gpio_wakeup_enable(RAIN_WAKE_GPIO, GPIO_INTR_HIGH_LEVEL);
-        gpio_wakeup_enabled = true;
-        ESP_LOGI(SLEEP_TAG, "🌧️ Rain wake-up enabled on GPIO%d", RAIN_WAKE_GPIO);
-    }
-
-    /* Disable LEDs to save power */
-    ESP_LOGI(SLEEP_TAG, "💡 Disabling LEDs...");
-    // LED strip and GPIO LED should already be off
-    
-    /* Print power consumption estimate */
-    ESP_LOGI(SLEEP_TAG, "📊 Expected sleep current: 150-300 µA (light sleep with Zigbee stack)");
-    ESP_LOGI(SLEEP_TAG, "🔋 Battery life estimate: 1-2 years with 2500mAh battery");
-    
-    /* Print wake-up configuration */
-    ESP_LOGI(SLEEP_TAG, "Wake-up sources enabled:");
-    if (duration_seconds > 0) {
-        ESP_LOGI(SLEEP_TAG, "  ⏰ Timer: every %lu minutes", duration_seconds / 60);
-    }
-    if (gpio_wakeup_enabled) {
-        ESP_LOGI(SLEEP_TAG, "  🌧️ Rain: GPIO%d (>%.1f mm)", RAIN_WAKE_GPIO, RAIN_MM_THRESHOLD);
-    }
-    
-    /* Flush all logs before sleeping */
-    vTaskDelay(pdMS_TO_TICKS(50));
-    
-    /* CRITICAL: Enable Zigbee sleep mode before entering light sleep */
-    ESP_LOGI(SLEEP_TAG, "� Enabling Zigbee sleep mode...");
-    esp_zb_sleep_enable(true);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    
-    ESP_LOGI(SLEEP_TAG, "�💤 Entering light sleep NOW...");
-    ESP_LOGI(SLEEP_TAG, "========================================");
-    vTaskDelay(pdMS_TO_TICKS(50));
-    
-    /* Enter light sleep - execution will continue from here after wake */
-    int64_t t_before_sleep = esp_timer_get_time();
-    esp_light_sleep_start();
-    int64_t t_after_sleep = esp_timer_get_time();
-    
-    /* CRITICAL: Disable Zigbee sleep mode after wake */
-    esp_zb_sleep_enable(false);
-
-    /* Calculate sleep duration */
-    uint32_t sleep_time_ms = (uint32_t)((t_after_sleep - t_before_sleep) / 1000);
-    
-    /* Determine wake reason */
-    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-    switch (wakeup_reason) {
-        case ESP_SLEEP_WAKEUP_TIMER:
-            ESP_LOGI(SLEEP_TAG, "⏰ Woke from light sleep by TIMER after %lu ms", sleep_time_ms);
-            break;
-        case ESP_SLEEP_WAKEUP_GPIO:
-            ESP_LOGI(SLEEP_TAG, "🌧️ Woke from light sleep by RAIN DETECTION (GPIO) after %lu ms", sleep_time_ms);
-            break;
-        default:
-            ESP_LOGI(SLEEP_TAG, "❓ Woke from light sleep by UNKNOWN reason (%d) after %lu ms", wakeup_reason, sleep_time_ms);
-            break;
-    }
-    ESP_LOGI(SLEEP_TAG, "========================================");
-    
-    /* Re-enable GPIO wakeup for next sleep cycle */
-    if (gpio_wakeup_enabled) {
-        gpio_wakeup_disable(RAIN_WAKE_GPIO);
-    }
-}
 
 /**
  * @brief Calculate power consumption estimate

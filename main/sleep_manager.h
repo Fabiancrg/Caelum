@@ -59,13 +59,8 @@ void save_rainfall_data(float rainfall_mm, uint32_t pulse_count);
  */
 bool load_rainfall_data(float *rainfall_mm, uint32_t *pulse_count);
 
-/**
- * @brief Enter light sleep mode with wake-up sources
- * 
- * @param duration_seconds Sleep duration in seconds (0 = infinite)
- * @param enable_gpio_wakeup Enable GPIO wake-up for rain detection
- */
-void enter_light_sleep(uint32_t duration_seconds, bool enable_gpio_wakeup);
+/* NOTE: Manual enter_light_sleep() removed - Zigbee stack handles sleep automatically
+ * via ESP_ZB_COMMON_SIGNAL_CAN_SLEEP signal and esp_zb_sleep_now() */
 
 /**
  * @brief Calculate estimated battery life
