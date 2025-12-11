@@ -38,17 +38,37 @@ esp_err_t sensor_init(i2c_bus_handle_t i2c_bus)
     ESP_LOGI(TAG, "Probing for BME280...");
     ret = bme280_app_init(i2c_bus);
     if (ret == ESP_OK) {
+        // Check if it's actually a BMP280 (no humidity) - if so, look for humidity sensor combo
+        if (bme280_app_is_bmp280()) {
+            ESP_LOGI(TAG, "BMP280 detected (no humidity), searching for separate humidity sensor...");
+            // Try to find SHT41 for humidity
+            esp_err_t sht_ret = sht41_init(i2c_bus);
+            if (sht_ret == ESP_OK) {
+                detected = SENSOR_TYPE_SHT41_BMP280;
+                ESP_LOGI(TAG, "Detected sensor combo: SHT41 + BMP280 (temp/RH from SHT41, pressure from BMP280)");
+                return ESP_OK;
+            }
+            ESP_LOGW(TAG, "No humidity sensor found, using BMP280 alone (humidity unavailable)");
+        }
         detected = SENSOR_TYPE_BME280;
         ESP_LOGI(TAG, "Detected sensor: BME280");
         return ESP_OK;
     }
 
-    // Try SHT41 (temp + humidity only, no pressure)
-    ESP_LOGI(TAG, "BME280 not found, probing for SHT41...");
-    ret = sht41_init(i2c_bus);
-    if (ret == ESP_OK) {
+    // Try SHT41 + BMP280 combo (temp+humidity from SHT41, pressure from BMP280)
+    ESP_LOGI(TAG, "BME280 not found, probing for SHT41 + BMP280 combo...");
+    esp_err_t sht_ret = sht41_init(i2c_bus);
+    esp_err_t bmp_ret = bmp280_init(i2c_bus);
+    if (sht_ret == ESP_OK && bmp_ret == ESP_OK) {
+        detected = SENSOR_TYPE_SHT41_BMP280;
+        ESP_LOGI(TAG, "Detected sensor combo: SHT41 + BMP280 (temp/RH from SHT41, pressure from BMP280)");
+        return ESP_OK;
+    }
+
+    // Try SHT41 alone (temp + humidity only, no pressure)
+    if (sht_ret == ESP_OK) {
+        ESP_LOGI(TAG, "Detected sensor: SHT41 only (pressure will default to %.1f hPa)", DEFAULT_PRESSURE_HPA);
         detected = SENSOR_TYPE_SHT41;
-        ESP_LOGI(TAG, "Detected sensor: SHT41 (pressure will default to %.1f hPa)", DEFAULT_PRESSURE_HPA);
         return ESP_OK;
     }
 
@@ -81,6 +101,10 @@ esp_err_t sensor_wake_and_measure(void)
         return bme280_app_wake_and_measure();
     } else if (detected == SENSOR_TYPE_SHT41) {
         return sht41_trigger_measurement();
+    } else if (detected == SENSOR_TYPE_SHT41_BMP280) {
+        esp_err_t r1 = sht41_trigger_measurement();
+        esp_err_t r2 = bmp280_trigger_measurement();
+        return (r1 == ESP_OK || r2 == ESP_OK) ? ESP_OK : ESP_FAIL;
     } else if (detected == SENSOR_TYPE_AHT20_BMP280) {
         // AHT20 may require a trigger; BMP280 starts measurement on read
         esp_err_t r1 = aht20_trigger_measurement();
@@ -96,6 +120,9 @@ esp_err_t sensor_read_temperature(float *out_c)
     if (detected == SENSOR_TYPE_BME280) {
         return bme280_app_read_temperature(out_c);
     } else if (detected == SENSOR_TYPE_SHT41) {
+        return sht41_read_temperature(out_c);
+    } else if (detected == SENSOR_TYPE_SHT41_BMP280) {
+        // Read temperature from SHT41 (preferred for accuracy)
         return sht41_read_temperature(out_c);
     } else if (detected == SENSOR_TYPE_AHT20_BMP280) {
         // Read temperature from AHT20 (preferred) or BMP280 as fallback
@@ -113,6 +140,8 @@ esp_err_t sensor_read_humidity(float *out_percent)
         return bme280_app_read_humidity(out_percent);
     } else if (detected == SENSOR_TYPE_SHT41) {
         return sht41_read_humidity(out_percent);
+    } else if (detected == SENSOR_TYPE_SHT41_BMP280) {
+        return sht41_read_humidity(out_percent);
     } else if (detected == SENSOR_TYPE_AHT20_BMP280) {
         return aht20_read_humidity(out_percent);
     }
@@ -128,6 +157,8 @@ esp_err_t sensor_read_pressure(float *out_hpa)
         // SHT41 has no pressure sensor - return default value
         *out_hpa = DEFAULT_PRESSURE_HPA;
         return ESP_OK;
+    } else if (detected == SENSOR_TYPE_SHT41_BMP280) {
+        return bmp280_read_pressure(out_hpa);
     } else if (detected == SENSOR_TYPE_AHT20_BMP280) {
         return bmp280_read_pressure(out_hpa);
     }

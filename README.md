@@ -41,14 +41,23 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
 ### 📋 Detailed Endpoint Descriptions
 
 #### **Endpoint 1: Environmental Monitoring & Power Management**
-- **Hardware**: BME280 sensor via I2C
+- **Hardware**: Environmental sensors via I2C (auto-detection)
   - **ESP32-H2**: SDA: GPIO10, SCL: GPIO11
   - **ESP32-C6**: SDA: GPIO6, SCL: GPIO7
+- **Supported Sensors** (automatically detected):
+  - **BME280**: Temperature + Humidity + Pressure (all-in-one sensor)
+  - **BMP280**: Temperature + Pressure only (no humidity sensor)
+  - **SHT40/SHT41**: High-accuracy Temperature + Humidity (no pressure)
+  - **SHT41 + BMP280**: Combined setup (temp/humidity from SHT41, pressure from BMP280)
+  - **AHT20 + BMP280**: Alternative combo (temp/humidity from AHT20, pressure from BMP280)
 - **Measurements**: 
-  - 🌡️ **Temperature**: -40°C to +85°C (±1°C accuracy)
-  - 💧 **Humidity**: 0-100% RH (±3% accuracy) 
-  - 🌪️ **Pressure**: 300-1100 hPa (±1 hPa accuracy)
+  - 🌡️ **Temperature**: -40°C to +85°C (±0.2°C accuracy with SHT40, ±1°C with BME280/BMP280)
+  - 💧 **Humidity**: 0-100% RH (±1.8% accuracy with SHT40, ±3% with BME280, unavailable with BMP280 alone) 
+  - 🌪️ **Pressure**: 300-1100 hPa (±1 hPa accuracy with BME280/BMP280, default 1000 hPa with SHT40 alone)
   - 🔋 **Battery Monitoring**: Li-Ion voltage (2.7V-4.2V) and percentage
+- **Sensor Detection**: Automatic chip ID detection distinguishes BME280 (0x60) from BMP280 (0x58)
+  - BMP280 detected → searches for SHT40/41 for humidity readings
+  - Optimal combo: SHT40 (accurate temp/humidity) + BMP280 (pressure)
 - **Battery Monitoring**:
   - **Hardware**: GPIO4 (ADC1_CH4) with voltage divider (2x 100kΩ resistors)
   - **Voltage**: Real-time battery voltage in 0.1V units
@@ -106,11 +115,20 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
 
 #### **Required Components**
 - ESP32-C6 or ESP32-H2 development board
-- BME280 environmental sensor module
+- **Environmental Sensor** (one of the following):
+  - **BME280** - All-in-one temperature + humidity + pressure sensor
+  - **BMP280** - Temperature + pressure only (pair with SHT40/41 for humidity)
+  - **SHT40 or SHT41** - High-accuracy temperature + humidity (pair with BMP280 for pressure)
+  - **AHT20** - Temperature + humidity alternative (pair with BMP280 for pressure)
 - Tipping bucket rain gauge with reed switch
 - Li-Ion battery (with protection circuit, 5V output recommended)
 - Voltage divider (2x 100kΩ resistors for battery monitoring)
 - Zigbee coordinator (ESP32-H2 or commercial gateway)
+
+**Recommended Sensor Combinations**:
+- **Best accuracy**: SHT40 + BMP280 (temp/humidity from SHT40, pressure from BMP280)
+- **All-in-one**: BME280 (good all-around accuracy, single module)
+- **Budget**: BMP280 alone (temperature + pressure, no humidity)
 
 #### **Pin Assignments**
 
@@ -119,8 +137,8 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
 GPIO 4  - Battery voltage input (ADC1_CH4 with voltage divider)
 GPIO 8  - WS2812 RGB LED (debug indicator, optional)
 GPIO 9  - Built-in button (factory reset)
-GPIO 10 - I2C SDA (BME280)
-GPIO 11 - I2C SCL (BME280) 
+GPIO 10 - I2C SDA (environmental sensors: BME280/BMP280/SHT40/SHT41/AHT20)
+GPIO 11 - I2C SCL (environmental sensors: BME280/BMP280/SHT40/SHT41/AHT20) 
 GPIO 12 - Rain gauge input (RTC-capable)*
 ```
 
@@ -128,8 +146,8 @@ GPIO 12 - Rain gauge input (RTC-capable)*
 ```
 GPIO 4  - Battery voltage input (ADC1_CH4 with voltage divider)
 GPIO 5  - Rain gauge input (RTC-capable)*
-GPIO 6  - I2C SDA (BME280)
-GPIO 7  - I2C SCL (BME280) 
+GPIO 6  - I2C SDA (environmental sensors: BME280/BMP280/SHT40/SHT41/AHT20)
+GPIO 7  - I2C SCL (environmental sensors: BME280/BMP280/SHT40/SHT41/AHT20) 
 GPIO 9  - Built-in button (factory reset)
 ```
 
@@ -287,14 +305,36 @@ idf.py -p [PORT] flash monitor
 
 ## 📊 Example Output
 
-### Device Initialization (with LED Boot Indicator)
+### Device Initialization (with Sensor Auto-Detection)
 ```
-I (408) WEATHER_STATION: Initialize Zigbee stack
-I (420) WEATHER_STATION: Debug RGB LED initialized on GPIO8 (WS2812)
-I (430) WEATHER_STATION: RGB LED blink started (network joining)
-I (558) WEATHER_STATION: Deferred driver initialization successful
-I (568) WEATHER_STATION: BME280 sensor initialized successfully on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)
-I (578) RAIN_GAUGE: Rain gauge initialized. Current total: 0.00 mm
+I (3668) i2c_bus: i2c0 bus inited
+I (3670) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
+I (3686) i2c_bus: found i2c device address = 0x44
+I (3695) i2c_bus: found i2c device address = 0x76
+I (3696) SENSOR_IF: I2C scan: 2 device(s): 0x44 0x76
+I (3697) SENSOR_IF: Probing for BME280...
+W (3698) BME280_APP: ⚠ Detected BMP280 sensor (Chip ID: 0x58) - Temperature + Pressure ONLY (no humidity!)
+I (3704) SENSOR_IF: BMP280 detected (no humidity), searching for separate humidity sensor...
+I (3710) SHT41: sht41_init: device created successfully
+I (3715) SENSOR_IF: Detected sensor combo: SHT41 + BMP280 (temp/RH from SHT41, pressure from BMP280)
+I (3720) WEATHER_STATION: Detected SHT41 + BMP280 sensor combo on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)
+I (3730) RAIN_GAUGE: Rain gauge initialized. Current total: 0.00 mm
+```
+
+### Alternative Sensor Configurations
+```
+# BME280 all-in-one sensor
+I (3697) SENSOR_IF: Probing for BME280...
+I (3698) BME280_APP: ✓ Detected BME280 sensor (Chip ID: 0x60) - Temperature + Humidity + Pressure
+I (3704) SENSOR_IF: Detected sensor: BME280
+I (3710) WEATHER_STATION: Detected BME280 sensor on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)
+
+# SHT41 alone (no pressure sensor)
+I (3697) SENSOR_IF: Probing for BME280...
+I (3698) SENSOR_IF: BME280 not found, probing for SHT41 + BMP280 combo...
+I (3704) SHT41: sht41_init: device created successfully
+I (3710) SENSOR_IF: Detected sensor: SHT41 only (pressure will default to 1000.0 hPa)
+I (3715) WEATHER_STATION: Detected SHT41 sensor on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)
 ```
 
 ### Zigbee SED Configuration

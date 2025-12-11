@@ -8,6 +8,7 @@ typedef enum {
     SENSOR_TYPE_BME280,
     SENSOR_TYPE_AHT20_BMP280,
     SENSOR_TYPE_SHT41,
+    SENSOR_TYPE_SHT41_BMP280,
 } sensor_type_t;
 
 // Initialize selected sensor stack (either BME280 or AHT20+BMP280)
