@@ -25,8 +25,14 @@
 #include "bme280_app.h"
 #include "sensor_if.h"
 #include "i2c_bus.h"
+#include "i2c_config.h"
 #include "nvs.h"
 #include "weather_driver.h"
+#include "battery_monitor.h"
+#include "anemometer.h"
+#include "dps368.h"
+#include "as5600.h"
+#include "veml7700.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -206,22 +212,7 @@ typedef struct {
     bool force_attribute;
 } rain_evt_t;
 
-/* Pulse counter configuration (GPIO13) */
-#define PULSE_COUNTER_GPIO      13              // GPIO pin for pulse counter input
-#define PULSE_COUNTER_VALUE     1.0f            // Value per pulse (can be adjusted)
-
-typedef enum {
-    PULSE_EVENT_PULSE = 0,
-    PULSE_EVENT_FLUSH,
-} pulse_event_type_t;
-
-/* Pulse counter queue event */
-typedef struct {
-    pulse_event_type_t type;
-    TickType_t tick;
-    bool force_nvs;
-    bool force_attribute;
-} pulse_evt_t;
+/* v2.0: Pulse counter removed - only rain gauge on GPIO12 */
 
 static QueueHandle_t rain_gauge_evt_queue = NULL;
 static float total_rainfall_mm = 0.0f;
@@ -231,14 +222,7 @@ static bool rain_gauge_enabled = false;  // Only enable when connected to networ
 static bool rain_gauge_isr_installed = false;  // Track ISR installation state
 static esp_timer_handle_t rain_flush_timer = NULL;
 
-/* Pulse counter variables (GPIO13) */
-static QueueHandle_t pulse_counter_evt_queue = NULL;
-static float total_pulse_count_value = 0.0f;
-static uint32_t pulse_counter_count = 0;
-static const char *PULSE_TAG = "PULSE_COUNTER";
-static bool pulse_counter_enabled = false;  // Only enable when connected to network
-static bool pulse_counter_isr_installed = false;  // Track ISR installation state
-static esp_timer_handle_t pulse_flush_timer = NULL;
+/* v2.0: Pulse counter variables removed */
 
 /* DS18B20 temperature sensor (GPIO24) */
 static const char *DS18B20_TAG = "DS18B20";
@@ -273,14 +257,6 @@ static void rain_gauge_request_flush(bool force_nvs, bool force_attribute);
 static void rain_gauge_flush_totals(bool save_to_nvs, bool update_attribute);
 static void rain_gauge_enable_isr(void);
 static void rain_gauge_disable_isr(void);
-static void pulse_counter_init(void);
-static void pulse_counter_isr_handler(void *arg);
-static void pulse_counter_task(void *arg);
-static void pulse_flush_timer_callback(void *arg);
-static void pulse_counter_request_flush(bool force_nvs, bool force_attribute);
-static void pulse_counter_flush_totals(bool save_to_nvs, bool update_attribute);
-static void pulse_counter_enable_isr(void);
-static void pulse_counter_disable_isr(void);
 static void ds18b20_init(void);
 static void ds18b20_read_and_report(uint8_t param);
 static esp_err_t battery_adc_init(void);
@@ -293,51 +269,99 @@ static esp_err_t deferred_driver_init(void)
         return ESP_FAIL;
     }
     
-    /* Initialize I2C and BME280 sensor */
-    i2c_config_t i2c_cfg = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = GPIO_NUM_10,     // ESP32-H2 I2C SDA
-        .scl_io_num = GPIO_NUM_11,     // ESP32-H2 I2C SCL
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = 100000,    // 100 KHz
-    };
+    ESP_LOGI(TAG, "⚙️  Initializing hardware v2.0 sensors...");
     
-    i2c_bus_handle_t i2c_bus = i2c_bus_create(I2C_NUM_0, &i2c_cfg);
-    if (i2c_bus == NULL) {
-        ESP_LOGE(TAG, "Failed to create I2C bus");
+    /* Initialize dual I2C buses for hardware v2.0 */
+    esp_err_t ret = i2c_buses_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2C buses");
         return ESP_FAIL;
     }
     
-    /* Initialize sensor layer: prefer BME280; if not present, try AHT20 + BMP280 combo */
-    esp_err_t ret = sensor_init(i2c_bus);
+    /* Get I2C bus handles */
+    i2c_bus_handle_t i2c_bus1 = i2c_get_bus1();
+    i2c_bus_handle_t i2c_bus2 = i2c_get_bus2();
+    
+    /* Initialize I2C Bus 1 sensors: SHT4x + DPS368 */
+    ESP_LOGI(TAG, "🌡️  Initializing Bus 1 sensors (SHT4x + DPS368)...");
+    
+    /* Try initializing environmental sensor (SHT4x/BME280/AHT20+BMP280 combo) */
+    ret = sensor_init(i2c_bus1);
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "No supported environmental sensor found on I2C bus (ret=%s) - continuing without sensors", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "No environmental sensor found on Bus 1 - continuing");
     } else {
         sensor_type_t st = sensor_get_type();
         if (st == SENSOR_TYPE_BME280) {
-            ESP_LOGI(TAG, "Detected BME280 sensor on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)");
+            ESP_LOGI(TAG, "✅ Detected BME280 on Bus 1");
+        } else if (st == SENSOR_TYPE_SHT41_BMP280) {
+            ESP_LOGI(TAG, "✅ Detected SHT41 + BMP280 combo on Bus 1");
         } else if (st == SENSOR_TYPE_AHT20_BMP280) {
-            ESP_LOGI(TAG, "Detected AHT20 + BMP280 sensor combo on ESP32-H2 (SDA:GPIO10, SCL:GPIO11)");
+            ESP_LOGI(TAG, "✅ Detected AHT20 + BMP280 combo on Bus 1");
         } else {
-            ESP_LOGI(TAG, "Sensor layer initialized (unknown type=%d)", st);
+            ESP_LOGI(TAG, "✅ Environmental sensor initialized (type=%d)", st);
         }
     }
     
-    /* Initialize rain gauge */
+    /* Initialize DPS368 pressure sensor */
+    ret = dps368_init(i2c_bus1);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "DPS368 not found or initialization failed - pressure data unavailable");
+    } else {
+        ESP_LOGI(TAG, "✅ DPS368 pressure sensor initialized");
+    }
+    
+    /* Initialize I2C Bus 2 sensors: AS5600 + VEML7700 */
+    ESP_LOGI(TAG, "🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...");
+    
+    /* Initialize AS5600 wind direction sensor */
+    ret = as5600_init(i2c_bus2);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "AS5600 not found or initialization failed - wind direction unavailable");
+    } else {
+        ESP_LOGI(TAG, "✅ AS5600 wind direction sensor initialized");
+    }
+    
+    /* Initialize VEML7700 light sensor */
+    ret = veml7700_init(i2c_bus2);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "VEML7700 not found or initialization failed - light data unavailable");
+    } else {
+        ESP_LOGI(TAG, "✅ VEML7700 light sensor initialized");
+    }
+    
+    /* Initialize rain gauge (GPIO12) */
+    ESP_LOGI(TAG, "🌧️  Initializing rain gauge...");
     rain_gauge_init();
     
-    /* Initialize pulse counter (GPIO13) */
-    pulse_counter_init();
+    /* Initialize anemometer (GPIO14) */
+    ESP_LOGI(TAG, "💨  Initializing anemometer...");
+    ret = anemometer_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Anemometer initialization failed");
+    } else {
+        ESP_LOGI(TAG, "✅ Anemometer initialized");
+    }
     
-    /* Initialize DS18B20 temperature sensor (GPIO24) */
+    /* Initialize DS18B20 temperature sensor (GPIO24) - keep for v2.0 */
+    ESP_LOGI(TAG, "🌡️  Initializing DS18B20...");
     ds18b20_init();
     
-    /* Initialize battery ADC */
-    ret = battery_adc_init();
+    /* Initialize MOSFET-controlled battery monitor (replaces old battery_adc_init) */
+    ESP_LOGI(TAG, "🔋  Initializing battery monitor...");
+    ret = battery_monitor_init();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Battery ADC initialization failed, will use simulated values");
+        ESP_LOGW(TAG, "Battery monitor initialization failed, will use fallback");
+        /* Fallback to old battery_adc_init if new monitor fails */
+        ret = battery_adc_init();
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Battery ADC initialization also failed");
+        }
+    } else {
+        ESP_LOGI(TAG, "✅ Battery monitor initialized (MOSFET-controlled)");
     }
+    
+    ESP_LOGI(TAG, "✅ Hardware v2.0 initialization complete");
+
     
     return ESP_OK;
 }
@@ -440,21 +464,10 @@ static void configure_analog_input_reporting(uint8_t param)
     
     esp_zb_zdo_device_bind_req(&rain_bind_req, bind_req_cb, (void*)"rain gauge");
     
-    /* Create binding for EP3 (pulse counter) */
-    esp_zb_zdo_bind_req_param_t pulse_bind_req = {0};
-    pulse_bind_req.req_dst_addr = esp_zb_get_short_address();  // Send bind request to ourselves
-    memcpy(pulse_bind_req.src_address, our_ieee, sizeof(esp_zb_ieee_addr_t));
-    pulse_bind_req.src_endp = HA_ESP_PULSE_COUNTER_ENDPOINT;
-    pulse_bind_req.cluster_id = ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT;
-    pulse_bind_req.dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
-    memcpy(pulse_bind_req.dst_address_u.addr_long, coordinator_ieee, sizeof(esp_zb_ieee_addr_t));
-    pulse_bind_req.dst_endp = 1;  // Coordinator endpoint
-    
-    esp_zb_zdo_device_bind_req(&pulse_bind_req, bind_req_cb, (void*)"pulse counter");
+    /* v2.0: Pulse counter endpoint and binding removed */
     
     /* Reportable change threshold for float values */
-    float rain_reportable_change = 0.3f;    // Report when rain changes by 0.3mm 
-    float pulse_reportable_change = 1.0f;   // Report when pulse count changes by 1
+    float rain_reportable_change = 0.3f;    // Report when rain changes by 0.3mm
     
     /* Configure reporting for EP2 (rain gauge) */
     esp_zb_zcl_config_report_cmd_t rain_report_cmd = {0};
@@ -481,30 +494,7 @@ static void configure_analog_input_reporting(uint8_t param)
     
     ESP_LOGI(RAIN_TAG, "📋 Rain gauge reporting configured: change=%.1f mm, max_interval=3600s", rain_reportable_change);
     
-    /* Configure reporting for EP3 (pulse counter) */
-    esp_zb_zcl_config_report_cmd_t pulse_report_cmd = {0};
-    pulse_report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = esp_zb_get_short_address();  // Send to self
-    pulse_report_cmd.zcl_basic_cmd.dst_endpoint = HA_ESP_PULSE_COUNTER_ENDPOINT;
-    pulse_report_cmd.zcl_basic_cmd.src_endpoint = HA_ESP_PULSE_COUNTER_ENDPOINT;
-    pulse_report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
-    pulse_report_cmd.clusterID = ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT;
-    
-    esp_zb_zcl_config_report_record_t pulse_record = {
-        .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
-        .attributeID = ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
-        .attrType = ESP_ZB_ZCL_ATTR_TYPE_SINGLE,  // Float type
-        .min_interval = 0,      // No minimum interval - report immediately on change
-        .max_interval = 3600,   // Report at least every hour even if no change
-        .reportable_change = &pulse_reportable_change,
-    };
-    pulse_report_cmd.record_number = 1;
-    pulse_report_cmd.record_field = &pulse_record;
-    
-    esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_config_report_cmd_req(&pulse_report_cmd);
-    esp_zb_lock_release();
-    
-    ESP_LOGI(PULSE_TAG, "📋 Pulse counter reporting configured: change=%.1f, max_interval=3600s", pulse_reportable_change);
+    /* v2.0: Pulse counter reporting removed */
 }
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
@@ -579,9 +569,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             rain_gauge_enable_isr();
             ESP_LOGI(RAIN_TAG, "Rain gauge enabled - device connected to Zigbee network");
             
-            /* Enable pulse counter now that we're connected */
-            pulse_counter_enable_isr();
-            ESP_LOGI(PULSE_TAG, "Pulse counter enabled - device connected to Zigbee network");
+            /* v2.0: No separate pulse counter - only rain gauge */
             
             /* Configure local reporting for analog input endpoints (EP2 and EP3)
              * This ensures the Zigbee stack knows to send reports when values change,
@@ -595,8 +583,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 2000); // Update in 2 seconds
             // Queue rain gauge flush to publish current total after network join
             rain_gauge_request_flush(false, true);
-            // Queue pulse counter flush to publish current total after network join
-            pulse_counter_request_flush(false, true);
+            // v2.0: No separate pulse counter
             esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 4000); // Update in 4 seconds
             
             /* Start periodic sensor reading timer for 15-minute intervals.
@@ -621,9 +608,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             rain_gauge_disable_isr();
             ESP_LOGW(RAIN_TAG, "Rain gauge disabled - not connected to network");
             
-            /* Disable pulse counter when not connected */
-            pulse_counter_disable_isr();
-            ESP_LOGW(PULSE_TAG, "Pulse counter disabled - not connected to network");
+            /* v2.0: No separate pulse counter */
             
             /* Stop periodic sensor reading timer when disconnected */
             stop_periodic_reading();
@@ -705,17 +690,8 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             /* Save to NVS immediately */
             save_rainfall_data(total_rainfall_mm, rain_pulse_count);
             ESP_LOGI(RAIN_TAG, "💾 Rain gauge value saved to NVS: %.2f mm (%lu pulses)", total_rainfall_mm, rain_pulse_count);
-            
-        } else if (message->info.dst_endpoint == HA_ESP_PULSE_COUNTER_ENDPOINT) {
-            /* Reset pulse counter */
-            ESP_LOGI(PULSE_TAG, "🔄 Pulse counter reset from Z2M: %.2f -> %.2f", total_pulse_count_value, new_value);
-            total_pulse_count_value = new_value;
-            pulse_counter_count = (uint32_t)new_value;  // Update pulse count
-            
-            /* Save to NVS immediately */
-            save_pulse_counter_data(total_pulse_count_value, pulse_counter_count);
-            ESP_LOGI(PULSE_TAG, "💾 Pulse counter value saved to NVS: %.2f (%lu pulses)", total_pulse_count_value, pulse_counter_count);
         }
+        /* v2.0: Pulse counter endpoint removed */
     }
     
     return ret;
@@ -748,15 +724,13 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
                     if (report_attr_message->dst_endpoint == HA_ESP_RAIN_GAUGE_ENDPOINT) {
                         /* This is rain gauge total rainfall */
                         ESP_LOGI(TAG, "📡 Rain: %.2f mm", analog_value);
-                    } else if (report_attr_message->dst_endpoint == HA_ESP_PULSE_COUNTER_ENDPOINT) {
-                        /* This is pulse counter total */
-                        ESP_LOGI(TAG, "📡 Pulse: %.2f", analog_value);
                     }
+                    /* v2.0: Pulse counter endpoint removed */
                 }
             } else if (report_attr_message->cluster == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT) {
                 int16_t temp_raw = report_attr_message->attribute.data.value ? 
                                  *(int16_t*)report_attr_message->attribute.data.value : 0;
-                if (report_attr_message->src_endpoint == HA_ESP_BME280_ENDPOINT) {
+                if (report_attr_message->src_endpoint == HA_ESP_ENV_SENSOR_ENDPOINT) {
                     ESP_LOGI(TAG, "📡 BME280 Temp: %.1f°C", temp_raw / 100.0f);
                 } else if (report_attr_message->src_endpoint == HA_ESP_DS18B20_ENDPOINT) {
                     ESP_LOGI(TAG, "📡 DS18B20 Temp: %.1f°C", temp_raw / 100.0f);
@@ -853,15 +827,7 @@ static void esp_zb_task(void *pvParameters)
         ESP_LOGI(TAG, "📂 Pre-loaded rainfall for cluster init: %.2f mm (%lu pulses)", total_rainfall_mm, rain_pulse_count);
     }
     
-    /* Load pulse counter data from RTC/NVS BEFORE creating clusters */
-    float loaded_pulse_value = 0.0f;
-    uint32_t loaded_pulse_count = 0;
-    load_pulse_counter_data(&loaded_pulse_value, &loaded_pulse_count);
-    total_pulse_count_value = roundf(loaded_pulse_value * 100.0f) / 100.0f;
-    pulse_counter_count = loaded_pulse_count;
-    if (loaded_pulse_value > 0.0f || loaded_pulse_count > 0) {
-        ESP_LOGI(TAG, "📂 Pre-loaded pulse counter for cluster init: %.2f (%lu pulses)", total_pulse_count_value, pulse_counter_count);
-    }
+    /* v2.0: Pulse counter removed */
     
     /* Create endpoint list */
     esp_zb_ep_list_t *esp_zb_ep_list = esp_zb_ep_list_create();
@@ -1020,10 +986,10 @@ static void esp_zb_task(void *pvParameters)
     
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_ota_cluster(esp_zb_bme280_clusters, esp_zb_ota_client_cluster, ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE));
     ESP_LOGI(TAG, "📦 OTA client cluster added to endpoint %d (version: 0x%08lX, mfr: 0x%04X, type: 0x%04X)", 
-             HA_ESP_BME280_ENDPOINT, ota_file_version, OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
+             HA_ESP_ENV_SENSOR_ENDPOINT, ota_file_version, OTA_UPGRADE_MANUFACTURER, OTA_UPGRADE_IMAGE_TYPE);
 
     esp_zb_endpoint_config_t endpoint_bme280_config = {
-        .endpoint = HA_ESP_BME280_ENDPOINT,
+        .endpoint = HA_ESP_ENV_SENSOR_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_TEMPERATURE_SENSOR_DEVICE_ID,
         .app_device_version = 0
@@ -1065,42 +1031,7 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_rain_clusters, endpoint_rain_config);
 
-    /* Create pulse counter sensor endpoint (GPIO13) */
-    esp_zb_cluster_list_t *esp_zb_pulse_clusters = esp_zb_zcl_cluster_list_create();
-    
-    /* Basic cluster intentionally omitted for pulse counter endpoint (EP3).
-     * We expose only the Analog Input cluster on this endpoint so the coordinator
-     * does not attempt to read device-level Basic attributes here.
-     */
-    
-    /* Create Analog Input cluster for pulse counter with REPORTING flag
-     * Present value must have REPORTING flag for reporting config persistence */
-    float pulse_present_value = total_pulse_count_value;  // Initialize with loaded value from NVS
-    esp_zb_attribute_list_t *esp_zb_pulse_analog_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT);
-    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(esp_zb_pulse_analog_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
-                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &pulse_present_value));
-    
-    /* Add description attribute */
-    char pulse_description[] = "\x0D""Pulse Counter";  // Length-prefixed: 13 bytes + "Pulse Counter"
-    esp_zb_analog_input_cluster_add_attr(esp_zb_pulse_analog_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, pulse_description);
-    
-    /* Add engineering units attribute */
-    uint16_t pulse_engineering_units = 0;  // 0 = dimensionless
-    esp_zb_analog_input_cluster_add_attr(esp_zb_pulse_analog_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_ENGINEERING_UNITS_ID, &pulse_engineering_units);
-    
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(esp_zb_pulse_clusters, esp_zb_pulse_analog_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    /* Add Identify cluster for pulse counter endpoint */
-    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(esp_zb_pulse_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
-    
-    esp_zb_endpoint_config_t endpoint_pulse_config = {
-        .endpoint = HA_ESP_PULSE_COUNTER_ENDPOINT,
-        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
-        .app_device_version = 0
-    };
-    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_pulse_clusters, endpoint_pulse_config);
+    /* v2.0: Pulse counter endpoint removed */
 
     /* Create DS18B20 temperature sensor endpoint (GPIO24) */
     esp_zb_cluster_list_t *esp_zb_ds18b20_clusters = esp_zb_zcl_cluster_list_create();
@@ -1149,7 +1080,7 @@ static void esp_zb_task(void *pvParameters)
     /* Add manufacturer info only to primary endpoint (BME280). Basic cluster is
      * intentionally not present on other endpoints to reduce coordinator reads.
      */
-    esp_zcl_utility_add_ep_basic_manufacturer_info(esp_zb_ep_list, HA_ESP_BME280_ENDPOINT, &info);
+    esp_zcl_utility_add_ep_basic_manufacturer_info(esp_zb_ep_list, HA_ESP_ENV_SENSOR_ENDPOINT, &info);
 
     esp_zb_device_register(esp_zb_ep_list);
     esp_zb_core_action_handler_register(zb_action_handler);
@@ -1161,7 +1092,7 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_zcl_attr_t *attr;
     
     // Check temperature
-    attr = esp_zb_zcl_get_attribute(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, 
+    attr = esp_zb_zcl_get_attribute(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, 
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID);
     if (attr) {
         ESP_LOGI(TAG, "  Temperature: access=0x%02x %s", attr->access, 
@@ -1169,7 +1100,7 @@ static void esp_zb_task(void *pvParameters)
     }
     
     // Check humidity
-    attr = esp_zb_zcl_get_attribute(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
+    attr = esp_zb_zcl_get_attribute(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID);
     if (attr) {
         ESP_LOGI(TAG, "  Humidity: access=0x%02x %s", attr->access,
@@ -1177,7 +1108,7 @@ static void esp_zb_task(void *pvParameters)
     }
     
     // Check pressure
-    attr = esp_zb_zcl_get_attribute(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
+    attr = esp_zb_zcl_get_attribute(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID);
     if (attr) {
         ESP_LOGI(TAG, "  Pressure: access=0x%02x %s", attr->access,
@@ -1192,13 +1123,7 @@ static void esp_zb_task(void *pvParameters)
                  (attr->access & ESP_ZB_ZCL_ATTR_ACCESS_REPORTING) ? "✅ REPORTING" : "❌ NO REPORTING");
     }
     
-    // Check pulse counter
-    attr = esp_zb_zcl_get_attribute(HA_ESP_PULSE_COUNTER_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID);
-    if (attr) {
-        ESP_LOGI(TAG, "  Pulse counter: access=0x%02x %s", attr->access,
-                 (attr->access & ESP_ZB_ZCL_ATTR_ACCESS_REPORTING) ? "✅ REPORTING" : "❌ NO REPORTING");
-    }
+    /* v2.0: Pulse counter check removed */
     
     // Check DS18B20 temperature
     attr = esp_zb_zcl_get_attribute(HA_ESP_DS18B20_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
@@ -1209,7 +1134,7 @@ static void esp_zb_task(void *pvParameters)
     }
     
     // Check battery voltage
-    attr = esp_zb_zcl_get_attribute(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+    attr = esp_zb_zcl_get_attribute(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x0020);
     if (attr) {
         ESP_LOGI(TAG, "  Battery voltage: access=0x%02x %s", attr->access,
@@ -1217,7 +1142,7 @@ static void esp_zb_task(void *pvParameters)
     }
     
     // Check battery percentage
-    attr = esp_zb_zcl_get_attribute(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+    attr = esp_zb_zcl_get_attribute(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x0021);
     if (attr) {
         ESP_LOGI(TAG, "  Battery percentage: access=0x%02x %s", attr->access,
@@ -1293,7 +1218,7 @@ static void bme280_read_and_report(uint8_t param)
     ret = sensor_read_temperature(&temperature);
     if (ret == ESP_OK) {
         int16_t temp_centidegrees = (int16_t)(temperature * 100);
-        ret = esp_zb_zcl_set_attribute_val(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
+        ret = esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
                                            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID,
                                            &temp_centidegrees, force_report);
         if (ret == ESP_OK) {
@@ -1309,7 +1234,7 @@ static void bme280_read_and_report(uint8_t param)
     ret = sensor_read_humidity(&humidity);
     if (ret == ESP_OK) {
         uint16_t hum_centipercent = (uint16_t)(humidity * 100);
-        ret = esp_zb_zcl_set_attribute_val(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
+        ret = esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
                                            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID,
                                            &hum_centipercent, force_report);
         if (ret == ESP_OK) {
@@ -1327,7 +1252,7 @@ static void bme280_read_and_report(uint8_t param)
     ret = sensor_read_pressure(&pressure);
     if (ret == ESP_OK) {
         int16_t pressure_zigbee = (int16_t)(pressure * 10); // hPa -> 0.1 kPa units
-        ret = esp_zb_zcl_set_attribute_val(HA_ESP_BME280_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
+        ret = esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
                                            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID,
                                            &pressure_zigbee, force_report);
         if (ret == ESP_OK) {
@@ -1377,8 +1302,7 @@ static void periodic_sensor_report_callback(void *arg)
         /* Endpoint 2: Rain gauge */
         rain_gauge_request_flush(false, true);
         
-        /* Endpoint 3: Pulse counter */
-        pulse_counter_request_flush(false, true);
+        /* v2.0: No pulse counter */
         
         /* Battery is read hourly based on its own time tracking */
         esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 400);
@@ -1802,14 +1726,14 @@ static void battery_read_and_report(uint8_t param)
                 }
                 // Update Zigbee attributes with last known values
                 esp_zb_zcl_set_attribute_val(
-                    HA_ESP_BME280_ENDPOINT,
+                    HA_ESP_ENV_SENSOR_ENDPOINT,
                     ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
                     0x0020,
                     &zigbee_voltage,
                     force_report);
                 esp_zb_zcl_set_attribute_val(
-                    HA_ESP_BME280_ENDPOINT,
+                    HA_ESP_ENV_SENSOR_ENDPOINT,
                     ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
                     0x0021,
@@ -1901,7 +1825,7 @@ skip_adc:
     }
     // Update battery voltage attribute (0x0020)
     esp_err_t ret = esp_zb_zcl_set_attribute_val(
-        HA_ESP_BME280_ENDPOINT,
+        HA_ESP_ENV_SENSOR_ENDPOINT,
         ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
         ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
         0x0020,  // Battery Voltage attribute ID
@@ -1913,7 +1837,7 @@ skip_adc:
     }
     // Update battery percentage attribute (0x0021)
     ret = esp_zb_zcl_set_attribute_val(
-        HA_ESP_BME280_ENDPOINT,
+        HA_ESP_ENV_SENSOR_ENDPOINT,
         ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
         ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
         0x0021,  // Battery Percentage Remaining attribute ID
@@ -2123,311 +2047,9 @@ void app_main(void)
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }
 
-/* Pulse counter implementation (GPIO13) - identical to rain gauge but for general pulse counting */
+/* v2.0: Pulse counter removed - only rain gauge (GPIO12) and anemometer (GPIO14) remain */
 
-static void IRAM_ATTR pulse_counter_isr_handler(void *arg)
-{
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    // ISR-safe: just increment a counter for debugging
-    static uint32_t isr_trigger_count = 0;
-    isr_trigger_count++;
-
-    /* Prepare event with ISR tick for accurate timing */
-    pulse_evt_t evt = {
-        .type = PULSE_EVENT_PULSE,
-        .tick = xTaskGetTickCountFromISR(),
-        .force_nvs = false,
-        .force_attribute = false,
-    };
-    
-    /* Only queue event if there's space - prevents overflow from rapid pulses */
-    if (xQueueSendFromISR(pulse_counter_evt_queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) {
-        /* Queue full - pulse will be lost but prevents crash */
-        static uint32_t queue_overflow_count = 0;
-        queue_overflow_count++;
-    }
-    
-    if (xHigherPriorityTaskWoken) {
-        portYIELD_FROM_ISR();
-    }
-}
-
-static void pulse_counter_task(void *arg)
-{
-    pulse_evt_t evt;
-    TickType_t last_pulse_time = 0;
-    uint32_t pending_pulse_count = 0;
-    bool pending_nvs_flush = false;
-    bool pending_attr_flush = false;
-    const TickType_t DEBOUNCE_TIME = pdMS_TO_TICKS(200); // 200ms debounce
-
-    ESP_LOGI(PULSE_TAG, "Pulse counter task started, waiting for events...");
-
-    for (;;) {
-        if (xQueueReceive(pulse_counter_evt_queue, &evt, portMAX_DELAY)) {
-            switch (evt.type) {
-            case PULSE_EVENT_PULSE: {
-                TickType_t current_time = evt.tick;
-
-                if ((current_time - last_pulse_time) > DEBOUNCE_TIME) {
-                    last_pulse_time = current_time;
-                    pending_pulse_count++;
-                    pulse_counter_count++;
-                    total_pulse_count_value += PULSE_COUNTER_VALUE;
-                    total_pulse_count_value = roundf(total_pulse_count_value * 100.0f) / 100.0f;
-
-                    ESP_LOGI(PULSE_TAG, "⚡ Pulse #%u: %.2f total (+%.2f)",
-                             pulse_counter_count, total_pulse_count_value, PULSE_COUNTER_VALUE);
-
-                    pending_nvs_flush = true;
-                    if (pulse_counter_enabled && zigbee_network_connected) {
-                        pending_attr_flush = true;
-                    }
-
-                    if (pending_pulse_count >= RAIN_PULSE_FLUSH_THRESHOLD) {
-                        ESP_LOGD(PULSE_TAG, "Pulse threshold reached (%u) - flushing totals", pending_pulse_count);
-                        pulse_counter_flush_totals(pending_nvs_flush, pending_attr_flush);
-                        pending_pulse_count = 0;
-                        pending_nvs_flush = false;
-                        pending_attr_flush = false;
-                        if (pulse_flush_timer != NULL) {
-                            esp_timer_stop(pulse_flush_timer);
-                        }
-                    } else {
-                        if (pulse_flush_timer != NULL) {
-                            esp_timer_stop(pulse_flush_timer);
-                            esp_timer_start_once(pulse_flush_timer, RAIN_FLUSH_INTERVAL_US);
-                        }
-                    }
-                } else {
-                    ESP_LOGD(PULSE_TAG, "Pulse ignored - debounce active (%u ms)",
-                             pdTICKS_TO_MS(current_time - last_pulse_time));
-                }
-                break;
-            }
-
-            case PULSE_EVENT_FLUSH: {
-                bool do_nvs = pending_nvs_flush || evt.force_nvs;
-                bool do_attr = pending_attr_flush || evt.force_attribute;
-
-                if (do_nvs || do_attr) {
-                    pulse_counter_flush_totals(do_nvs, do_attr);
-                    pending_pulse_count = 0;
-                    pending_nvs_flush = false;
-                    pending_attr_flush = false;
-                }
-                if (pulse_flush_timer != NULL) {
-                    esp_timer_stop(pulse_flush_timer);
-                }
-                break;
-            }
-
-            default:
-                break;
-            }
-        }
-    }
-}
-
-static void pulse_flush_timer_callback(void *arg)
-{
-    pulse_counter_request_flush(false, false);
-}
-
-static void pulse_counter_request_flush(bool force_nvs, bool force_attribute)
-{
-    if (pulse_counter_evt_queue == NULL) {
-        return;
-    }
-
-    pulse_evt_t evt = {
-        .type = PULSE_EVENT_FLUSH,
-        .tick = xTaskGetTickCount(),
-        .force_nvs = force_nvs,
-        .force_attribute = force_attribute,
-    };
-
-    if (xQueueSend(pulse_counter_evt_queue, &evt, 0) != pdPASS) {
-        ESP_LOGW(PULSE_TAG, "Failed to queue pulse flush event (queue full)");
-    }
-}
-
-static void pulse_counter_flush_totals(bool save_to_nvs, bool update_attribute)
-{
-    float rounded_pulse_value = roundf(total_pulse_count_value * 100.0f) / 100.0f;
-
-    if (save_to_nvs) {
-        ESP_LOGI(PULSE_TAG, "💾 Flushing pulse totals to storage: %.2f (%u pulses)",
-                 rounded_pulse_value, pulse_counter_count);
-        
-        /* Save to RTC memory and NVS using sleep_manager (same as rain gauge) */
-        save_pulse_counter_data(rounded_pulse_value, pulse_counter_count);
-    }
-
-    if (update_attribute) {
-        /* Only check network connection, not ISR enabled state
-         * This allows periodic updates even when ISR is temporarily disabled */
-        if (!zigbee_network_connected) {
-            ESP_LOGW(PULSE_TAG, "Skipping Zigbee update - network not connected");
-            return;
-        }
-
-        esp_err_t ret = esp_zb_zcl_set_attribute_val(
-            HA_ESP_PULSE_COUNTER_ENDPOINT,
-            ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
-            &rounded_pulse_value,
-            false);
-
-        if (ret == ESP_OK) {
-            ESP_LOGI(PULSE_TAG, "📡 Pulse counter attribute updated: %.2f (%u pulses)", rounded_pulse_value, pulse_counter_count);
-        } else {
-            ESP_LOGE(PULSE_TAG, "❌ Failed to update pulse attribute: %s", esp_err_to_name(ret));
-        }
-    }
-}
-
-static void pulse_counter_enable_isr(void)
-{
-    ESP_LOGI(PULSE_TAG, "🔧 Enabling pulse counter ISR on GPIO%d (installed: %s)", PULSE_COUNTER_GPIO, pulse_counter_isr_installed ? "YES" : "NO");
-    
-    // Set enabled flag first
-    pulse_counter_enabled = true;
-    
-    // Add ISR handler (will succeed even if already added)
-    esp_err_t ret = gpio_isr_handler_add(PULSE_COUNTER_GPIO, pulse_counter_isr_handler, NULL);
-    if (ret == ESP_OK) {
-        pulse_counter_isr_installed = true;
-        ESP_LOGI(PULSE_TAG, "✅ Pulse counter ISR enabled successfully on GPIO%d", PULSE_COUNTER_GPIO);
-        /* Ensure interrupt line is enabled so events will be delivered */
-        gpio_intr_enable(PULSE_COUNTER_GPIO);
-    } else if (ret == ESP_ERR_INVALID_STATE) {
-        // ISR already installed - this is fine
-        pulse_counter_isr_installed = true;
-        ESP_LOGI(PULSE_TAG, "✅ Pulse counter ISR already installed, now enabled");
-        /* Make sure the interrupt line is enabled in case it was disabled */
-        gpio_intr_enable(PULSE_COUNTER_GPIO);
-    } else {
-        ESP_LOGE(PULSE_TAG, "❌ Failed to enable pulse counter ISR: %s", esp_err_to_name(ret));
-    }
-    
-    // Test GPIO level at enable time
-    int current_level = gpio_get_level(PULSE_COUNTER_GPIO);
-    ESP_LOGI(PULSE_TAG, "🔌 Current GPIO%d level at enable: %d", PULSE_COUNTER_GPIO, current_level);
-}
-
-static void pulse_counter_disable_isr(void)
-{
-    if (pulse_counter_isr_installed) {
-        /* Disable the GPIO interrupt line but keep handler installed */
-        gpio_intr_disable(PULSE_COUNTER_GPIO);
-        pulse_counter_enabled = false;
-        ESP_LOGI(PULSE_TAG, "Pulse counter interrupts disabled (handler kept)");
-    } else {
-        pulse_counter_enabled = false;
-        ESP_LOGI(PULSE_TAG, "Pulse counter ISR already disabled");
-    }
-
-    /* Persist any accumulated pulses before going idle */
-    pulse_counter_request_flush(true, false);
-}
-
-static void pulse_counter_init(void)
-{
-    ESP_LOGI(PULSE_TAG, "Initializing pulse counter on GPIO%d (disabled until network connection)", PULSE_COUNTER_GPIO);
-    
-    /* Start disabled - will be enabled when connected to network */
-    pulse_counter_enabled = false;
-    
-    /* Load pulse counter data from RTC memory or NVS (same as rain gauge) */
-    load_pulse_counter_data(&total_pulse_count_value, &pulse_counter_count);
-    
-    ESP_LOGI(PULSE_TAG, "Current pulse counter total: %.2f (%lu pulses)", total_pulse_count_value, pulse_counter_count);
-    
-    /* Configure GPIO for pulse counter */
-    gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_POSEDGE,  // Interrupt on rising edge
-        .pin_bit_mask = (1ULL << PULSE_COUNTER_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = 0,   // No pull-up needed
-        .pull_down_en = 1, // Enable internal pull-down for additional noise protection
-    };
-    esp_err_t ret = gpio_config(&io_conf);
-    if (ret != ESP_OK) {
-        ESP_LOGE(PULSE_TAG, "Failed to configure GPIO%d: %s", PULSE_COUNTER_GPIO, esp_err_to_name(ret));
-        return;
-    }
-    
-    ESP_LOGI(PULSE_TAG, "✅ GPIO%d configured successfully", PULSE_COUNTER_GPIO);
-    
-    /* Enable GPIO wakeup for light sleep */
-    ret = gpio_wakeup_enable(PULSE_COUNTER_GPIO, GPIO_INTR_HIGH_LEVEL);
-    if (ret == ESP_OK) {
-        ESP_LOGI(PULSE_TAG, "✅ GPIO%d configured as light sleep wake source", PULSE_COUNTER_GPIO);
-    } else {
-        ESP_LOGW(PULSE_TAG, "⚠️ Failed to enable GPIO wake: %s", esp_err_to_name(ret));
-    }
-    
-    // Check initial GPIO state
-    int initial_level = gpio_get_level(PULSE_COUNTER_GPIO);
-    ESP_LOGI(PULSE_TAG, "🔌 Initial GPIO%d level: %d (with pull-down)", PULSE_COUNTER_GPIO, initial_level);
-    
-    /* Create queue for pulse events */
-    pulse_counter_evt_queue = xQueueCreate(32, sizeof(pulse_evt_t));
-    if (!pulse_counter_evt_queue) {
-        ESP_LOGE(PULSE_TAG, "Failed to create event queue");
-        return;
-    }
-
-    /* Create timer used to flush accumulated pulses */
-    const esp_timer_create_args_t flush_timer_args = {
-        .callback = pulse_flush_timer_callback,
-        .name = "pulse_flush"
-    };
-    if (esp_timer_create(&flush_timer_args, &pulse_flush_timer) != ESP_OK) {
-        ESP_LOGE(PULSE_TAG, "Failed to create pulse flush timer");
-        return;
-    }
-    
-    /* Install GPIO ISR service if not already installed */
-    esp_err_t isr_ret = gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-    if (isr_ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGD(PULSE_TAG, "GPIO ISR service already installed");
-    } else if (isr_ret != ESP_OK) {
-        ESP_LOGE(PULSE_TAG, "Failed to install ISR service: %s", esp_err_to_name(isr_ret));
-        return;
-    }
-    
-    /* Install ISR handler early so pulses are captured even while offline */
-    esp_err_t add_ret = gpio_isr_handler_add(PULSE_COUNTER_GPIO, pulse_counter_isr_handler, NULL);
-    if (add_ret == ESP_OK) {
-        pulse_counter_isr_installed = true;
-        gpio_intr_enable(PULSE_COUNTER_GPIO);
-        ESP_LOGI(PULSE_TAG, "✅ ISR handler installed early on GPIO%d", PULSE_COUNTER_GPIO);
-    } else if (add_ret == ESP_ERR_INVALID_STATE) {
-        pulse_counter_isr_installed = true;
-        gpio_intr_enable(PULSE_COUNTER_GPIO);
-        ESP_LOGI(PULSE_TAG, "ℹ️ ISR handler already present for GPIO%d", PULSE_COUNTER_GPIO);
-    } else {
-        ESP_LOGW(PULSE_TAG, "⚠️ Failed to add ISR handler early: %s", esp_err_to_name(add_ret));
-    }
-    
-    /* Create pulse counter task */
-    BaseType_t pulse_task_ret = xTaskCreate(pulse_counter_task, "pulse_counter_task", 4096, NULL, 5, NULL);
-    if (pulse_task_ret != pdPASS) {
-        ESP_LOGE(PULSE_TAG, "Failed to create pulse counter task");
-        return;
-    }
-    
-    ESP_LOGI(PULSE_TAG, "Pulse counter initialized successfully. Current total: %.2f", total_pulse_count_value);
-    ESP_LOGI(PULSE_TAG, "🔧 GPIO%d monitoring: level=%d, pull-down=enabled, trigger=RISING_EDGE", 
-             PULSE_COUNTER_GPIO, gpio_get_level(PULSE_COUNTER_GPIO));
-    ESP_LOGI(PULSE_TAG, "Pulse counter ready - initial report will occur after network connection");
-}
-
-/********************* DS18B20 Temperature Sensor Functions **************************/
+/********************* DS18B20 Temperature Sensor Functions ***************************/
 
 /* DS18B20 1-Wire Commands */
 #define DS18B20_CMD_SKIP_ROM        0xCC

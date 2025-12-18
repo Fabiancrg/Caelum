@@ -1,4 +1,10 @@
 #
+# Chip target
+#
+CONFIG_IDF_TARGET="esp32h2"
+# end of Chip target
+
+#
 # Partition Table
 #
 CONFIG_PARTITION_TABLE_CUSTOM=y
