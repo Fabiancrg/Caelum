@@ -4,8 +4,8 @@ build/
 managed_components/
 Doc/
 PCB/lib/
-PCB/caelum/caelum-backups
-PCB/caelum/~*
-PCB/caelum/#*
-PCB/caelum/_*
-PCB/caelum/*cache
+PCB/caelum_v2/caelum_v2-backups
+PCB/caelum_v2/~*
+PCB/caelum_v2/#*
+PCB/caelum_v2/_*
+PCB/caelum_v2/*cache
