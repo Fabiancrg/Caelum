@@ -1,7 +1,7 @@
-hy [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Fabiancrg)
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Fabiancrg)
 
-| Supported Targets | ESP32-H2 (v2.0) | ESP32-C6 (v1.0 legacy) |
-| ----------------- |  -------- | -------- |
+| Supported Target | ESP32-H2 |
+| ---------------- | -------- |
 
 # Caelum - Zigbee Weather Station
 
@@ -13,11 +13,6 @@ hy [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://k
 This project implements a battery-powered comprehensive weather station using ESP32-H2 with Zigbee connectivity. The device operates as a Zigbee Sleepy End Device (SED) with automatic light sleep for ultra-low power consumption while maintaining network responsiveness.
 
 **Hardware v2.0** features dual I2C buses supporting multiple sensor combinations, dedicated rain gauge and anemometer inputs, DS18B20 temperature sensor, light sensor, and wind direction sensor for professional weather monitoring capabilities.
-
-This project is based on the examples provided in the ESP Zigbee SDK:
-
-* [ESP Zigbee SDK Docs](https://docs.espressif.com/projects/esp-zigbee-sdk)
-* [ESP Zigbee SDK Repo](https://github.com/espressif/esp-zigbee-sdk)
 
 ## Device Features
 
@@ -45,30 +40,25 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
 ### 📋 Detailed Endpoint Descriptions (v2.0)
 
 #### **Endpoint 1: Environmental Monitoring & Power Management**
-- **Hardware**: Dual I2C bus architecture for sensor flexibility
-  - **I2C Bus 1 (GPIO10/11)**: Temperature, Humidity, Pressure sensors
-  - **I2C Bus 2 (GPIO1/2)**: Wind direction, Light, Alternative pressure sensors
+- **I2C Bus 1 (GPIO10/11)**: Temperature, Humidity, Pressure sensors
 - **Supported Sensors** (automatically detected):
   - **SHT41** (Bus 1): High-accuracy Temperature + Humidity (±0.2°C, ±1.8% RH)
   - **AHT20** (Bus 1): Alternative Temperature + Humidity sensor
   - **BMP280** (Bus 1): Temperature + Pressure (±1 hPa accuracy)
   - **BME280** (Bus 1): All-in-one Temperature + Humidity + Pressure
-  - **DPS368** (Bus 2): High-precision Pressure sensor (±0.002 hPa)
-  - **AS5600** (Bus 2): Magnetic wind direction sensor (12-bit resolution)
-  - **VEML7700** (Bus 2): Ambient light sensor (0.0036 to 120,000 lux)
+  - **DPS368** (Bus 1): High-precision Pressure sensor (±0.002 hPa)
 - **Measurements**: 
   - 🌡️ **Temperature**: -40°C to +85°C (multiple sources available)
   - 💧 **Humidity**: 0-100% RH (from SHT41/AHT20/BME280)
   - 🌪️ **Pressure**: 300-1100 hPa (from BMP280/BME280/DPS368)
   - 🔋 **Battery Monitoring**: Li-Ion voltage (2.7V-4.2V) and percentage
 - **Battery Monitoring**:
-  - **Hardware**: GPIO4 (ADC1_CH4) with voltage divider (2x 100kΩ resistors)
+  - **Hardware**: GPIO4 (ADC1_CH4) with voltage divider
   - **MOSFET Control**: GPIO3 for active power management
   - **Voltage**: Real-time battery voltage in 0.1V units
   - **Percentage**: Battery level 0-100% based on Li-Ion discharge curve
   - **Calibration**: ESP32-H2 ADC correction factor (1.604x) for accurate readings
   - **Optimized Reading**: Time-based hourly intervals with NVS persistence
-- **Use Case**: Comprehensive weather monitoring, HVAC automation, solar power tracking
 
 #### **Endpoint 2: Rain Gauge System**
 - **Hardware**: Tipping bucket rain gauge with reed switch
@@ -105,8 +95,7 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
   - Interrupt-based pulse counting with debounce
   - Persistent storage (NVS) for total tracking
   - Similar architecture to rain gauge (proven reliability)
-- **Use Case**: Weather station, HVAC control, drone operations
-
+    
 #### **Endpoint 5: Wind Direction**
 - **Hardware**: AS5600 magnetic rotary position sensor (I2C Bus 2)
   - **I2C Address**: 0x36 (fixed)
@@ -116,7 +105,6 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
   - Contactless magnetic sensing (no wear)
   - Absolute position (no homing required)
   - High resolution for accurate wind vane reading
-- **Use Case**: Weather station, wind power monitoring, sailing applications
 
 #### **Endpoint 6: Light Sensor**
 - **Hardware**: VEML7700 ambient light sensor (I2C Bus 2)
@@ -127,7 +115,6 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
   - High dynamic range (16-bit resolution)
   - Automatic gain adjustment
   - Human eye response matching
-- **Use Case**: Solar panel monitoring, daylight harvesting, plant growth monitoring
 
 ### 🔧 Hardware Configuration
 
@@ -138,25 +125,20 @@ The device includes a WS2812 RGB LED on GPIO8 (ESP32-H2) that provides visual fe
   - **AHT20** - Alternative temperature + humidity sensor
   - **BMP280** - Pressure sensor (pairs with SHT41/AHT20)
   - **BME280** - All-in-one temp/humidity/pressure (alternative)
+  - **DPS368** - High-precision barometric pressure sensor (optional, alternative to BMP280)
 - **I2C Bus 2 Sensors** (Wind/Light/Pressure):
   - **AS5600** - Magnetic rotary position sensor for wind direction
   - **VEML7700** - Ambient light sensor (lux measurements)
-  - **DPS368** - High-precision barometric pressure sensor (optional, alternative to BMP280)
 - **1-Wire Sensor**:
   - **DS18B20** - Waterproof temperature probe for external measurements
-- **Wind Sensors**:
+- **Weather Sensors**:
   - Tipping bucket rain gauge with reed switch (0.36mm per tip)
   - Anemometer with pulse output for wind speed measurement
 - **Power System**:
-  - Li-Ion battery (with protection circuit, 5V output recommended)
-  - Voltage divider (2x 100kΩ resistors for battery monitoring)
+  - Li-Ion battery
+  - Voltage divider
   - MOSFET for battery power management (GPIO3 control)
 - Zigbee coordinator (ESP32-H2 or commercial gateway)
-
-**Recommended v2.0 Configuration**:
-- **Best accuracy**: SHT41 + BMP280 (Bus 1) + AS5600 + VEML7700 (Bus 2) + DS18B20
-- **Weather station**: Full sensor array with wind speed, direction, rain, temperature, light
-- **Minimal**: SHT41 + BMP280 (Bus 1) + Rain gauge + DS18B20
 
 #### **Pin Assignments**
 
@@ -176,65 +158,6 @@ GPIO 24 - DS18B20 1-Wire temperature sensor (waterproof probe)
 ```
 
 **Note**: v2.0 uses dedicated dual I2C buses to avoid address conflicts and support expanded sensor array.
-
-**ESP32-C6 (v1.0 Hardware - Legacy)**
-```
-GPIO 4  - Battery voltage input (ADC1_CH4 with voltage divider)
-GPIO 5  - Rain gauge input (RTC-capable)
-GPIO 6  - I2C SDA (environmental sensors: BME280/BMP280/SHT40/SHT41/AHT20)
-GPIO 7  - I2C SCL (environmental sensors: BME280/BMP280/SHT40/SHT41/AHT20) 
-GPIO 9  - Built-in button (factory reset)
-```
-*Note: v1.0 hardware support maintained for backward compatibility. See caelum-weatherstation repository for v1.0 firmware.*eatherstation repository for v1.0 firmware.*
-
-### 🔧 Hardware Version History
-
-#### **v2.0 (Current - 2024)**
-**Target**: ESP32-H2 only  
-**Major Changes**:
-- ✅ **Dual I2C Buses**: Separate buses (GPIO10/11 and GPIO1/2) eliminate address conflicts
-- ✅ **Expanded Sensors**: DS18B20 (GPIO24), AS5600 wind direction, VEML7700 light, DPS368 pressure
-- ✅ **Dedicated Inputs**: Rain gauge (GPIO12), Anemometer (GPIO14)
-- ✅ **Battery Management**: MOSFET control (GPIO3) for active power management
-- ❌ **Removed**: Pulse counter (GPIO13) - replaced by dedicated rain gauge and anemometer
-- 📦 **Endpoints**: 6 total (ENV, RAIN, DS18B20, WIND_SPEED, WIND_DIR, LIGHT)
-
-**Pin Changes from v1.0**:
-```
-Added:
-  GPIO 1/2   - I2C Bus 2 (new sensors)
-  GPIO 3     - Battery MOSFET control  
-  GPIO 14    - Anemometer (wind speed)
-  GPIO 24    - DS18B20 temperature probe
-  
-Removed:
-  GPIO 13    - Pulse counter (v1.0 only)
-```
-
-#### **v1.0 (Legacy - 2023)**
-**Targets**: ESP32-H2, ESP32-C6  
-**Features**:
-- Single I2C bus (GPIO10/11 on H2, GPIO6/7 on C6)
-- BME280/BMP280/SHT41/AHT20 environmental sensors
-- Rain gauge (GPIO12 on H2, GPIO5 on C6)
-- Pulse counter (GPIO13) for general-purpose counting
-- 3 endpoints (ENV, RAIN, PULSE_COUNTER)
-
-**Migration Notes**:
-- v1.0 firmware available in `caelum-weatherstation` repository
-- v2.0 hardware NOT compatible with v1.0 firmware (different GPIO assignments)
-- v1.0 hardware CAN run v2.0 firmware with limited functionality (only ENV + RAIN endpoints)
-
-**Battery Voltage Divider Circuit**
-```
-Battery+ ──┬── 100kΩ ──┬── 100kΩ ── GND
-           │           │
-           │           └── GPIO4 (ADC input)
-           │
-           └── 5V output (to ESP32 power)
-```
-```
-Note: Voltage divider monitors the cell voltage (2.7V-4.2V) while the battery pack provides 5V regulated output
 
 ### 🔌 Zigbee Integration
 - **Protocol**: Zigbee 3.0  
@@ -287,37 +210,8 @@ Note: Voltage divider monitors the cell voltage (2.7V-4.2V) while the battery pa
 - **Protocol**: Zigbee 3.0  
 - **Device Type**: End Device (sleepy end device for battery operation)
 - **Supported Channels**: 11-26 (2.4 GHz)
-- **Compatible**: Zigbee2MQTT, Home Assistant ZHA, Hubitat
+- **Compatible**: Zigbee2MQTT, Home Assistant ZHA
 - **OTA Support**: Over-the-air firmware updates enabled (see [OTA_GUIDE.md](OTA_GUIDE.md))
-
-### ⚡ Power Management
-- **Deep Sleep Mode**: Configurable intervals (60-7200 seconds, default 15 minutes)
-  - **Configurable via Zigbee2MQTT**: Adjust sleep duration remotely from Home Assistant
-  - **Connected**: Uses configured interval (default 15 minutes)
-  - **Disconnected**: 30-second intervals for quick reconnection
-  - **Max retries**: After 20 attempts (10 minutes), reduces to half configured duration
-  - **Extended wake time**: Device stays awake for 60 seconds when not connected (instead of 10s) to allow Zigbee join process to complete
-- **Wake-up Sources**:
-  - Timer (configurable 60-7200 seconds)
-  - **Rain detection during deep sleep** (both targets support RTC wake-up)
-    - **ESP32-H2**: GPIO12 (RTC-capable)
-    - **ESP32-C6**: GPIO5 (RTC-capable)
-- **Network Retry Logic**: 
-  - Prevents deep sleep when not connected to ensure reliable pairing
-  - Extended 60-second wake period for join process completion
-  - Connection success triggers 15-second reporting window before sleep
-- **Battery Life**: Optimized for extended operation on battery power
-  - **Total Power Consumption**: ~230µAh/day (optimized from ~700µAh/day)
-  - **Battery monitoring**: ~12µAh/day (hourly readings with time-based intervals)
-  - **Deep sleep**: 7-10µA baseline
-  - **Active time**: ~100mA during 15-minute wake cycles
-- **Battery Estimate**: 
-  - **2500mAh battery**: ~10.9 years (optimized from ~3.5 years)
-  - **Optimization breakdown**: 
-    - 3 ADC samples instead of 10 (70% ADC power savings)
-    - No delays between samples (90% overhead reduction)
-    - Time-based hourly intervals (vs. every wake cycle)
-    - Total battery monitoring: 98% power reduction
 
 ## 🚀 Quick Start
 
@@ -502,277 +396,6 @@ A custom external converter is provided for full feature support with Zigbee2MQT
 | DS18B20 | N/A | GPIO24 | ➕ New |
 | Battery MOSFET | N/A | GPIO3 | ➕ New |
 
-### Firmware Migration
-```bash
-# Clone v2.0 repository
-git clone https://github.com/Fabiancrg/caelum.git
-cd caelum
-
-# Set target (ESP32-H2 only for v2.0)
-idf.py set-target esp32h2
-
-# Build and flash
-idf.py -p [PORT] erase-flash
-idf.py -p [PORT] flash monitor
-```
-
-### What Changes?
-**Removed Features**:
-- ❌ Pulse counter endpoint (GPIO13) - use dedicated anemometer instead
-- ❌ Sleep configuration endpoint - replaced by sensor-specific intervals
-- ❌ Remote LED control - LED only operates during boot/join
-
-**New Features**:
-- ✅ DS18B20 external temperature probe (waterproof)
-- ✅ Wind speed measurement (anemometer on GPIO14)
-- ✅ Wind direction (AS5600 magnetic sensor, 0-360°)
-- ✅ Ambient light sensor (VEML7700, 0.0036-120k lux)
-- ✅ Dual I2C buses eliminate address conflicts
-- ✅ Battery MOSFET control for active power management
-
-### Zigbee2MQTT Converter Update
-v2.0 requires a new external converter due to endpoint changes:
-```javascript
-// Update your external converter to v2.0 format
-// See ZIGBEE2MQTT_CONVERTER.md for full v2.0 converter code
-```
-
-### Home Assistant Entity Changes
-| v1.0 Entity | v2.0 Entity | Notes |
-|-------------|-------------|-------|
-| `sensor.temp` | `sensor.temp` (EP1) | ✅ Compatible |
-| `sensor.humidity` | `sensor.humidity` (EP1) | ✅ Compatible |
-| `sensor.pressure` | `sensor.pressure` (EP1) | ✅ Compatible |
-| `sensor.rainfall` | `sensor.rainfall` (EP2) | ✅ Compatible |
-| `sensor.battery` | `sensor.battery` (EP1) | ✅ Compatible |
-| `number.sleep_duration` | Removed | ❌ Not in v2.0 |
-| `switch.led` | Removed | ❌ Boot-only in v2.0 |
-| N/A | `sensor.temp_external` (EP3) | ➕ New (DS18B20) |
-| N/A | `sensor.wind_speed` (EP4) | ➕ New (Anemometer) |
-| N/A | `sensor.wind_direction` (EP5) | ➕ New (AS5600) |
-| N/A | `sensor.light_level` (EP6) | ➕ New (VEML7700) |
-
-### I2C Sensor Compatibility
-v1.0 sensors on single I2C bus CAN be used on v2.0 Bus 1 (GPIO10/11):
-- ✅ BME280 / BMP280 / SHT41 / AHT20 work on Bus 1
-- ➕ Add AS5600 + VEML7700 on Bus 2 (GPIO1/2) for full functionality
-- ⚠️ Some I2C addresses may conflict if all sensors on same bus
-
-### Device Information
-- **Manufacturer**: ESPRESSIF
-- **Model**: caelum
-- **Firmware Version**: Managed via CMakeLists.txt (PROJECT_VER, BUILD_NUMBER)
-  - Generated header approach using `version.h.in` template
-  - Single source of truth for all version macros
-  - Automatically propagated to Zigbee Basic cluster attributes
-- **Supported**: Zigbee2MQTT with custom external converter (`caelum-weather-station.js`)
-
-## 🔧 Configuration
-
-### Version Management
-
-Version information is centrally managed in `CMakeLists.txt`:
-
-```cmake
-set(PROJECT_VER "1.0")           # Major.Minor version
-set(BUILD_NUMBER 0)              # Build/patch number
-```
-
-The build system automatically:
-- Generates `build/generated/version.h` from `version.h.in` template
-- Populates all version macros (FW_VERSION, FW_DATE_CODE, OTA_FILE_VERSION, etc.)
-- Propagates to Zigbee Basic cluster (swBuildId, dateCode, applicationVersion)
-- Updates OTA cluster attributes for firmware update tracking
-
-### Application Configuration
-
-**Zigbee SED Configuration** (in `main/esp_zb_weather.c`):
-- **Keep-alive interval**: 7500ms (7.5 seconds) - Zigbee parent polling
-- **Sleep threshold**: 6000ms (6.0 seconds) - idle time before light sleep
-- **Parent timeout**: 64 minutes - how long parent keeps device in child table
-- **Power profile**: 0.68mA sleep, 12mA transmit, ~0.83mA average
-
-**Device Parameters** (in `main/esp_zb_weather.h`):
-- **Default sleep duration**: 900 seconds (15 minutes) - configurable via Endpoint 3
-- **Sleep duration range**: 60-7200 seconds (1 minute to 2 hours)
-- **Rain tip bucket volume**: 0.36mm per tip
-- **Battery monitoring interval**: 3600 seconds (1 hour) - time-based with NVS persistence
-- **Battery ADC samples**: 3 samples averaged for accuracy
-- **LED boot indicator**: WS2812 RGB on GPIO8 (ESP32-H2), automatically powered down after boot
-- **Network retry**: 20 max retries when not connected
-- **Connection timeout**: Extended wake time during network join
-
-## 📝 Project Structure
-
-```
-WeatherStation/
-├── main/
-│   ├── esp_zb_weather.c     # Main Zigbee stack, 4-endpoint logic, network retry, LED control
-│   ├── esp_zb_weather.h     # Configuration, endpoint definitions, LED settings
-│   ├── esp_zb_ota.c         # OTA update implementation
-│   ├── esp_zb_ota.h         # OTA interface
-│   ├── sleep_manager.c      # Deep sleep management with RTC GPIO support
-│   ├── sleep_manager.h      # Sleep manager interface
-│   ├── bme280_app.c         # BME280 sensor driver with board-specific I2C
-│   ├── bme280_app.h         # BME280 interface
-│   ├── weather_driver.c     # DEPRECATED: Legacy driver (unused)
-│   └── weather_driver.h     # DEPRECATED: Legacy interface (unused)
-├── Doc/
-│   └── README_GIT.md        # Git workflow guide for team (Azure DevOps)
-├── caelum-weather-station.js # Zigbee2MQTT external converter (4 endpoints)
-├── version.h.in             # Version header template (for configure_file)
-├── CMakeLists.txt           # Build configuration with version generation
-├── partitions.csv           # Partition table with OTA support
-├── sdkconfig.defaults       # Default SDK settings
-├── OTA_GUIDE.md            # OTA update instructions
-├── LED_DEBUG_FEATURE.md    # LED debug feature documentation
-└── README.md               # This file
-```
-
-## �️ Recent changes (summary)
-
-The following changes were applied to the firmware and Zigbee2MQTT converter in recent updates. This section documents the edits made so you can rebuild, flash and test the updated behaviour.
-
-- Converter (`caelum-weather-station.js`):
-  - Mapped the device to advertise endpoints 1..3 (removed explicit EP4 advertisement).
-  - Switched configureReporting for analog inputs to numeric reporting values (example: {min:10, max:3600, change:0.1}) so controllers only subscribe to the `presentValue` attribute and not `statusFlags`.
-  - Moved the On/Off expose to the primary endpoint mapping so controllers will use EP1 for LED control.
-
-- Firmware (`main/esp_zb_weather.c`, `main/esp_zb_weather.h` and related):
-  - Endpoint & cluster changes:
-    - Removed Basic cluster exposure from non-primary endpoints to prevent coordinators reading Basic attributes on the sensor endpoints.
-    - Moved `genOnOff` (LED debug) to the primary endpoint (EP1); no separate EP4 is registered anymore.
-    - Ensured Analog Input clusters expose only `presentValue` for rain / sleep configuration to avoid sending `statusFlags` to the controller.
-    - Fixed ZCL string length prefixing for `sleep_description` and other length-prefixed ZCL string attributes.
-
-  - Rain gauge reliability and counting fixes:
-    - ISR now timestamps events and queues a small event struct so the rain task can disambiguate wake-count vs queued ISR events.
-    - Introduced a small duplicate-suppression window after wake (50 ms) to avoid double-counting the same physical tip when the wake path and ISR both fire for the same edge.
-    - Kept the ISR handler installed across sleep/wake; bounce handling now disables/re-enables the GPIO interrupt line (gpio_intr_disable/enable) instead of removing and re-adding the ISR handler. This reduces the race window where pulses could be missed.
-    - Reduced the bounce settle time and debounce defaults to improve responsiveness while still preventing false tips (defaults in code: 200 ms debounce / 200 ms settle).
-    - Queue events carry ISR ticks for robust timing comparisons in the consumer task.
-
-  - Wake/reporting timing and sleep behaviour:
-    - The device now schedules a shorter reporting window after wake so overall awake time is reduced.
-      - Reporting window (time between wake and starting deep-sleep preparation) is now 7 seconds (was previously 15s / 10s in some paths).
-      - Per-sensor scheduled report offsets inside that window: BME280 at ~1s, rain update at ~2s, battery at ~3s, sleep-duration at ~4s.
-    - Final delays in `prepare_for_deep_sleep()` were reduced (smaller vTaskDelay values) while preserving a short transmission window to allow Zigbee packets to be sent.
-    - OTA behaviour is unchanged: if an OTA update is active the device will postpone deep sleep and periodically re-check the OTA status until the transfer is complete.
-
-  - Miscellaneous:
-    - `RAIN_MM_PER_PULSE` remains 0.36 mm per tip; all rain math still uses this constant.
-    - NVS persistence for rain totals and sleep configuration remains in place and is used to recover counts across reboots.
-
-## 🔁 How to build & flash the updated firmware (Windows PowerShell)
-
-Use your existing ESP-IDF environment and the usual build/flash commands. Example (PowerShell):
-
-```powershell
-# Set target and open menuconfig if needed
-idf.py set-target esp32h2
-idf.py menuconfig
-
-# Optional: erase flash for a clean install
-idf.py -p COM3 erase-flash
-
-# Build and flash
-idf.py -p COM3 flash monitor
-```
-
-Replace `COM3` with your serial port. `monitor` attaches the serial monitor after flash; you'll see the device logs in the console.
-
-## ✅ Test checklist after flashing
-
-1. Pair the device with your Zigbee coordinator (or let Zigbee2MQTT re-discover the device).
-2. Verify endpoints: device should advertise endpoints 1..3 and the LED On/Off should be on EP1.
-3. Check Zigbee2MQTT logs: ensure that only `presentValue` for genAnalogInput is reported for rain and sleep duration, and that `statusFlags` is not being reported.
-4. Trigger a rain pulse (or simulate the reed switch): verify that pulses are counted even if they occur before Zigbee reconnect; verify duplicate suppression does not double-count the same physical tip.
-5. Observe a normal wake cycle: sensor reports should appear at ~1s/2s/3s/4s and the device should enter deep sleep after ~7s (log messages show the exact timing).
-6. Start an OTA update (if available) and verify the device stays awake for the duration of the transfer.
-
-If any reports are missed in practice, increase the reporting window to 10s or increase the final transmission delay in `prepare_for_deep_sleep()`.
-
-If you'd like, I can prepare a complementary small test patch that logs timestamps when each scheduled report runs so you can measure precise timings on your hardware.
-
-
-## �🔧 Troubleshooting
-
-### Common Issues
-
-#### **Rain Gauge Not Detecting**
-- **ESP32-H2**: Verify GPIO12 connections and reed switch operation
-- **ESP32-C6**: Verify GPIO5 connections and reed switch operation
-- Check that device is connected to Zigbee network (rain gauge only active when connected)
-- Ensure proper pull-down resistor on rain gauge input
-- Both targets support rain detection during deep sleep
-
-#### **BME280 Not Reading**  
-- **ESP32-H2**: Check I2C connections (SDA: GPIO10, SCL: GPIO11)
-- **ESP32-C6**: Check I2C connections (SDA: GPIO6, SCL: GPIO7)
-- Verify BME280 I2C address (default: 0x76 or 0x77)
-- Ensure proper power supply to sensor (3.3V)
-
-#### **Battery Monitoring Issues**
-- Verify voltage divider connections (2x 100kΩ resistors to GPIO4)
-- Check battery cell voltage tap (should be 2.7V-4.2V at divider output)
-- Ensure GPIO4 (ADC1_CH4) is properly configured
-- Monitor serial output for ADC calibration messages
-- **ESP32-H2 ADC quirk**: Uses empirical correction factor (1.604x) for DB_12 attenuation
-- Battery percentage calculated from voltage (2.7V=0%, 4.2V=100%)
-- **Optimized reading schedule**: 
-  - First reading always happens on boot/pairing
-  - Subsequent readings every hour (3600 seconds) based on elapsed time
-  - Uses NVS to persist timestamp across deep sleep cycles
-  - Robust to frequent wake-ups (e.g., during rain events)
-
-#### **Zigbee Connection Issues**
-- Perform factory reset with long press (5s) on built-in button
-- Ensure Zigbee coordinator is in pairing mode
-- Check channel compatibility between coordinator and device
-- **Auto-retry**: Device automatically retries every 30 seconds when disconnected
-- **Extended wake time**: Device now stays awake for 60 seconds (instead of 10s) during join attempts
-- **Battery impact**: Extended connection attempts may drain battery faster
-- **Join timing**: Allow full 60 seconds for device to complete Zigbee join process
-
-#### **Device Not Waking from Sleep**
-- Check battery voltage (minimum 3.0V recommended)
-- Verify wake-up sources (timer, rain gauge)
-- Review sleep manager logs for errors
-- **Network dependency**: Device stays awake longer when not connected to network
-
-#### **High Battery Drain**
-- Check if device is stuck in connection retry mode (30-second intervals)
-- Verify Zigbee network is stable and accessible
-- Monitor connection retry count in device logs
-- Consider factory reset if connection issues persist
-- **Battery monitoring optimization**: Should consume only ~12µAh/day (hourly readings)
-- **Total optimized power**: ~230µAh/day → 10.9 year battery life (2500mAh battery)
-- **LED Debug**: If enabled, LED consumes ~20mA during wake cycles (can be disabled via Zigbee)
-
-#### **LED Not Working**
-- **ESP32-H2 SuperMini**: Verify GPIO8 connection to WS2812 RGB LED
-- Check LED debug feature is enabled in `esp_zb_weather.h` (`DEBUG_LED_ENABLE=1`)
-- Verify LED debug is enabled via Zigbee2MQTT switch (endpoint 4)
-- Monitor serial output for LED initialization messages
-- Ensure led_strip component (~2.0.0) is properly installed
-- **LED States**: Blue=connected, Orange blink=joining, White flash=rain, Off=sleep/disabled
-- See [LED_DEBUG_FEATURE.md](LED_DEBUG_FEATURE.md) for detailed troubleshooting
-
-### 📋 Development Notes
-
-- **ESP-IDF Version**: v5.5.1 recommended
-- **Zigbee SDK**: Latest ESP Zigbee SDK required  
-- **Memory Usage**: ~2MB flash, ~200KB RAM typical
-- **Power Consumption**: 
-  - Active: ~100mA
-  - Deep sleep: 7-10µA
-  - Battery monitoring: ~12µAh/day (optimized)
-  - **Total**: ~230µAh/day (3.1× improvement from ~700µAh/day)
-- **Battery Operation**: Optimized for CR123A or Li-ion battery packs
-  - **2500mAh battery**: ~10.9 years (vs. 3.5 years before optimization)
-- **Target Support**: Both ESP32-H2 and ESP32-C6 fully support RTC GPIO wake-up for rain detection
-- **Version Management**: Centralized in CMakeLists.txt with generated header approach
-
 ## 🔄 OTA Updates
 
 This project supports Over-The-Air (OTA) firmware updates via Zigbee network. See [OTA_GUIDE.md](OTA_GUIDE.md) for detailed instructions on:
@@ -786,37 +409,6 @@ This project supports Over-The-Air (OTA) firmware updates via Zigbee network. Se
 This project follows dual licensing:
 - **Software**: GNU General Public License v3.0 (see [LICENSE](LICENSE))
 - **Hardware**: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (see [LICENSE-hardware](LICENSE-hardware))
-
-## 🔄 Based On
-
-This project is derived from ESP32 Zigbee SDK examples and implements a professional weather station architecture with:
-
-**v2.0 Architecture (Current)**:
-- 6-endpoint design (ENV, RAIN, DS18B20, WIND_SPEED, WIND_DIR, LIGHT)
-- Dual I2C buses (Bus 1: GPIO10/11, Bus 2: GPIO1/2) for expanded sensor support
-- DS18B20 1-Wire external temperature probe (GPIO24)
-- Dedicated rain gauge (GPIO12) and anemometer (GPIO14) inputs
-- AS5600 magnetic wind direction sensor (12-bit, 0-360°)
-- VEML7700 ambient light sensor (0.0036-120k lux range)
-- Optional DPS368 high-precision pressure sensor
-- Battery MOSFET control (GPIO3) for active power management
-- Automatic light sleep with 7.5s keep-alive polling
-- Ultra-low power: 0.68mA sleep current
-
-**v1.0 Architecture (Legacy)**:
-- 4-endpoint design (ENV, RAIN, PULSE_COUNTER, SLEEP_CONFIG)
-- Single I2C bus (GPIO10/11 on H2, GPIO6/7 on C6)
-- General-purpose pulse counter (GPIO13)
-- Remote sleep duration configuration
-- Available in `caelum-weatherstation` repository
-
-**Key Improvements in v2.0**:
-- ✅ Eliminated I2C address conflicts with dual-bus architecture
-- ✅ Added professional weather sensors (wind speed, direction, light)
-- ✅ DS18B20 waterproof probe for external temperature monitoring
-- ✅ Dedicated GPIO for each measurement type (no multiplexing)
-- ✅ Removed generic pulse counter - replaced with specific sensors
-- ✅ Enhanced battery management with MOSFET control
 
 ## 🤝 Contributing
 
