@@ -1,4 +1,4 @@
 (fp_lib_table
   (version 7)
-  (lib (name "caelum_v2")(type "KiCad")(uri "/home/fabian/Repositories/caelum-weatherstation/PCB/caelum_v2")(options "")(descr ""))
+  (lib (name "caelum_v2")(type "KiCad")(uri "/home/fabian/Repositories/Caelum/PCB/caelum_v2")(options "")(descr ""))
 )

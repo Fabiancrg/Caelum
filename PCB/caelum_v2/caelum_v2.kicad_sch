@@ -2640,6 +2640,325 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Sensor_Pressure:LPS22HB"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at -11.43 1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify right)
+				)
+			)
+			(property "Value" "LPS22HB"
+				(at -11.43 -1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify right)
+				)
+			)
+			(property "Footprint" "Package_LGA:ST_HLGA-10_2x2mm_P0.5mm_LayoutBorder3x2y"
+				(at 1.27 -11.43 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "https://www.st.com/resource/en/datasheet/lps22hb.pdf"
+				(at 1.27 -13.97 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+					(hide yes)
+				)
+			)
+			(property "Description" "MEMS nano pressure sensor, 260-1260 hPa, absolute digital output baromeeter, 24 bit, SPI, I2C, 0.0075 hPa noise rms, ST_HLGA-10L"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "mems absolute baromeeter spi i2c pressure"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "ST?HLGA*2x2mm*P0.5mm*LayoutBorder3x2y*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "LPS22HB_0_1"
+				(rectangle
+					(start -10.16 10.16)
+					(end 10.16 -7.62)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+				(polyline
+					(pts
+						(xy -7.62 0) (xy -5.08 2.54)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center -6.35 1.27)
+					(radius 2.6162)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -6.35 -1.524) (xy -6.35 -4.064)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -5.08 2.54) (xy -5.334 1.524) (xy -6.096 2.286) (xy -5.08 2.54)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type outline)
+					)
+				)
+			)
+			(symbol "LPS22HB_1_1"
+				(pin power_in line
+					(at -5.08 12.7 270)
+					(length 2.54)
+					(name "VDD"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "10"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -2.54 12.7 270)
+					(length 2.54)
+					(name "Vdd_IO"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -2.54 -10.16 90)
+					(length 2.54)
+					(hide yes)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -2.54 -10.16 90)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -2.54 -10.16 90)
+					(length 2.54)
+					(hide yes)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 12.7 7.62 180)
+					(length 2.54)
+					(name "SDA"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(alternate "SDI" input line)
+					(alternate "SDI/SDO" bidirectional line)
+				)
+				(pin input line
+					(at 12.7 5.08 180)
+					(length 2.54)
+					(name "SA0"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(alternate "SDO" output line)
+				)
+				(pin input clock
+					(at 12.7 2.54 180)
+					(length 2.54)
+					(name "SCL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(alternate "SPC" input clock)
+				)
+				(pin input line
+					(at 12.7 0 180)
+					(length 2.54)
+					(name "~{CS}"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 12.7 -5.08 180)
+					(length 2.54)
+					(name "INT_DRDY"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Transistor_FET:BSS138"
 			(pin_names
 				(offset 0)
@@ -3226,222 +3545,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "caelum:DPS310"
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "U"
-				(at 0 -7.112 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Value" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Footprint" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "DPS310_0_1"
-				(rectangle
-					(start -6.35 7.62)
-					(end 5.08 -5.08)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "DPS310_1_1"
-				(text "DPS310"
-					(at -0.762 9.144 0)
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(pin power_in line
-					(at -8.89 5.08 0)
-					(length 2.54)
-					(name "VDD"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "8"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at -8.89 2.54 0)
-					(length 2.54)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "7"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at -8.89 0 0)
-					(length 2.54)
-					(name "VDDIO"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "6"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at -8.89 -2.54 0)
-					(length 2.54)
-					(name "SDO"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "5"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at 7.62 5.08 180)
-					(length 2.54)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at 7.62 2.54 180)
-					(length 2.54)
-					(name "CSB"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 7.62 0 180)
-					(length 2.54)
-					(name "SDI"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at 7.62 -2.54 180)
-					(length 2.54)
-					(name "SCK"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 		(symbol "power:+3V3"
 			(power)
 			(pin_numbers
@@ -3678,6 +3781,16 @@
 			)
 		)
 		(uuid "11cddeef-62fd-4dbc-862a-e15638fdd2e1")
+	)
+	(text "!!! TO REPLACE with LPS22HBTR !!!"
+		(exclude_from_sim no)
+		(at 227.838 102.362 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "64ff42a7-9602-43e4-9854-1f9a55ae30c1")
 	)
 	(text "Battery Voltage \n(Voltage divider driven by P-Mosfet + N-Mosfet)"
 		(exclude_from_sim no)
@@ -4390,6 +4503,16 @@
 			(type default)
 		)
 		(uuid "4019b709-d3e2-4412-9701-e31329e1c9c3")
+	)
+	(wire
+		(pts
+			(xy 137.16 168.91) (xy 140.97 168.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "413e58d1-affc-4014-943a-7640c44a8898")
 	)
 	(wire
 		(pts
@@ -5153,6 +5276,16 @@
 	)
 	(wire
 		(pts
+			(xy 137.16 173.99) (xy 140.97 173.99)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "add1c29a-72e5-48bd-937b-3825b6304ecd")
+	)
+	(wire
+		(pts
 			(xy 147.32 74.93) (xy 153.67 74.93)
 		)
 		(stroke
@@ -5543,16 +5676,6 @@
 	)
 	(wire
 		(pts
-			(xy 110.49 38.1) (xy 114.3 38.1)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ecde3534-a014-4dc4-bb1e-51b0625a647b")
-	)
-	(wire
-		(pts
 			(xy 214.63 123.19) (xy 204.47 123.19)
 		)
 		(stroke
@@ -5583,13 +5706,13 @@
 	)
 	(wire
 		(pts
-			(xy 110.49 40.64) (xy 114.3 40.64)
+			(xy 137.16 171.45) (xy 140.97 171.45)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "f08e4835-0ea8-4d78-bb27-9d9ccd94b9d9")
+		(uuid "ef60a271-053e-4444-9e89-6b8a3a6b22eb")
 	)
 	(wire
 		(pts
@@ -5805,6 +5928,28 @@
 					(size 1.27 1.27)
 				)
 				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "OUT-"
+		(shape input)
+		(at 140.97 171.45 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "147f1c8a-1331-4e66-a4af-96f64b8b9599")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 149.1562 171.45 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
 				(hide yes)
 			)
 		)
@@ -6537,7 +6682,7 @@
 	)
 	(global_label "GPIO12"
 		(shape input)
-		(at 114.3 38.1 0)
+		(at 140.97 168.91 0)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -6547,7 +6692,7 @@
 		)
 		(uuid "f0dad51a-ca1d-4006-b551-a54488bcb3ae")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 124.1795 38.1 0)
+			(at 150.8495 168.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7286,6 +7431,102 @@
 			(project "caelum"
 				(path "/37ad57cb-45d9-40ac-b6d6-3143604b7b27"
 					(reference "H4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Sensor_Pressure:LPS22HB")
+		(at 222.25 153.67 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "288903c0-1868-4bb9-b9bd-cdfb3103ea89")
+		(property "Reference" "U5"
+			(at 210.82 151.1299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "LPS22HB"
+			(at 210.82 153.6699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Package_LGA:ST_HLGA-10_2x2mm_P0.5mm_LayoutBorder3x2y"
+			(at 223.52 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.st.com/resource/en/datasheet/lps22hb.pdf"
+			(at 223.52 167.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Description" "MEMS nano pressure sensor, 260-1260 hPa, absolute digital output baromeeter, 24 bit, SPI, I2C, 0.0075 hPa noise rms, ST_HLGA-10L"
+			(at 222.25 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "4"
+			(uuid "5ef52a8e-47ac-4a31-b406-a081012aceee")
+		)
+		(pin "9"
+			(uuid "a630cdd2-526b-4dba-8220-048423718b0e")
+		)
+		(pin "7"
+			(uuid "d54fed7c-4883-4de2-aab9-639cd82ff5d1")
+		)
+		(pin "1"
+			(uuid "c025668e-5c0f-4d2c-a991-46b2160843c2")
+		)
+		(pin "3"
+			(uuid "ef535a58-36f3-4b03-819d-6e3b52f88d07")
+		)
+		(pin "8"
+			(uuid "08ba4be7-adea-4950-8b49-2ec5d62e5204")
+		)
+		(pin "2"
+			(uuid "20a1c701-ece4-41f7-8c73-eba345309388")
+		)
+		(pin "5"
+			(uuid "ece8c9df-a904-459c-ba19-222f9a129ccf")
+		)
+		(pin "6"
+			(uuid "5d9f8bd4-73ff-4632-9103-762d8e4feb1d")
+		)
+		(pin "10"
+			(uuid "51e96d6a-babe-4df5-a489-3878f445cb61")
+		)
+		(instances
+			(project ""
+				(path "/37ad57cb-45d9-40ac-b6d6-3143604b7b27"
+					(reference "U5")
 					(unit 1)
 				)
 			)
@@ -8806,7 +9047,7 @@
 	)
 	(symbol
 		(lib_id "power:+3V3")
-		(at 114.3 40.64 270)
+		(at 140.97 173.99 270)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -8815,7 +9056,7 @@
 		(fields_autoplaced yes)
 		(uuid "8b5f3df6-1135-4a19-bb97-8fa3a6ab0c97")
 		(property "Reference" "#PWR04"
-			(at 110.49 40.64 0)
+			(at 137.16 173.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8824,7 +9065,7 @@
 			)
 		)
 		(property "Value" "+3V3"
-			(at 118.11 40.6399 90)
+			(at 144.78 173.9899 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8833,7 +9074,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 114.3 40.64 0)
+			(at 140.97 173.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8842,7 +9083,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 114.3 40.64 0)
+			(at 140.97 173.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8851,7 +9092,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+3V3\""
-			(at 114.3 40.64 0)
+			(at 140.97 173.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9631,93 +9872,6 @@
 		)
 	)
 	(symbol
-		(lib_id "caelum:DPS310")
-		(at 223.52 120.65 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "a55c3ce6-e88b-4d9a-ac5d-c434da52a79d")
-		(property "Reference" "U4"
-			(at 222.885 105.41 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "~"
-			(at 222.885 107.95 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Footprint" "Package_LGA:Bosch_LGA-8_2x2.5mm_P0.65mm_ClockwisePinNumbering"
-			(at 223.52 120.65 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 223.52 120.65 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 223.52 120.65 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "b92b4c20-ae89-4e73-9d1f-c99b3a7c71e8")
-		)
-		(pin "3"
-			(uuid "257cf51e-7d21-47b6-9235-132a2f56280b")
-		)
-		(pin "6"
-			(uuid "47e89785-d916-4672-8e49-2a2ee4b86c14")
-		)
-		(pin "1"
-			(uuid "db0664ec-67aa-4fe2-82b6-6a68609d11db")
-		)
-		(pin "5"
-			(uuid "d8f20c7d-81c8-4c54-9e7c-77f33e1fb1af")
-		)
-		(pin "7"
-			(uuid "19da4dea-4e14-4c27-aaef-738eb4989c1f")
-		)
-		(pin "4"
-			(uuid "69b82843-c745-4d81-9ec6-41dcefa10da7")
-		)
-		(pin "8"
-			(uuid "213f0b38-a970-4df8-8be9-de47a30f413a")
-		)
-		(instances
-			(project ""
-				(path "/37ad57cb-45d9-40ac-b6d6-3143604b7b27"
-					(reference "U4")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:C")
 		(at 149.86 88.9 0)
 		(unit 1)
@@ -10263,33 +10417,33 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector:Conn_01x02_Pin")
-		(at 105.41 38.1 0)
+		(lib_id "Connector_Generic:Conn_01x03")
+		(at 132.08 171.45 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(fields_autoplaced yes)
-		(uuid "d28dc3f4-93b0-44f6-9684-b427e5ba3543")
-		(property "Reference" "J3"
-			(at 106.045 33.02 0)
+		(uuid "e10edd9f-7d65-4a03-8186-2c8153209465")
+		(property "Reference" "J5"
+			(at 132.08 162.56 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "Pulse1"
-			(at 106.045 35.56 0)
+		(property "Value" "DRV5032DULPG(M)"
+			(at 132.08 165.1 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Connector_Hirose:Hirose_DF13C_CL535-0402-2-51_1x02-1MP_P1.25mm_Vertical"
-			(at 105.41 38.1 0)
+		(property "Footprint" "Connector_Hirose:Hirose_DF13C_CL535-0403-5-51_1x03-1MP_P1.25mm_Vertical"
+			(at 132.08 171.45 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10298,7 +10452,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 105.41 38.1 0)
+			(at 132.08 171.45 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10306,25 +10460,28 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Generic connector, single row, 01x02, script generated"
-			(at 105.41 38.1 0)
+		(property "Description" "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(at 132.08 171.45 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(hide yes)
 			)
+		)
+		(pin "3"
+			(uuid "ee0d96c4-b19a-46d8-aec0-f8025acfd8fc")
 		)
 		(pin "2"
-			(uuid "4f593471-62a6-47f1-b595-c400b114d1f0")
+			(uuid "4e29a2a0-4d01-43bb-9c19-22671dd76675")
 		)
 		(pin "1"
-			(uuid "6a7a6ce5-3beb-48c6-91f4-bd8f7972445c")
+			(uuid "1d2a44ad-0c2c-4fec-b5b2-5eb830637e1f")
 		)
 		(instances
-			(project ""
+			(project "caelum_v2"
 				(path "/37ad57cb-45d9-40ac-b6d6-3143604b7b27"
-					(reference "J3")
+					(reference "J5")
 					(unit 1)
 				)
 			)
