@@ -218,8 +218,8 @@ GPIO 24 - DS18B20 1-Wire temperature sensor (waterproof probe)
 ### Prerequisites
 
 ```bash
-# Install ESP-IDF v5.5.1 or later
-git clone -b v5.5.1 --recursive https://github.com/espressif/esp-idf.git
+# Install ESP-IDF v5.5.3 or later
+git clone -b v5.5.3 --recursive https://github.com/espressif/esp-idf.git
 cd esp-idf
 # For ESP32-H2 (v2.0 hardware required)
 ./install.sh esp32h2
@@ -430,7 +430,7 @@ If you find this project useful, consider supporting the development:
 
 **Project**: Caelum - ESP32 Zigbee Weather Station  
 **Version**: v2.0 - Hardware redesign with dual I2C buses and expanded sensor array  
-**Compatible**: ESP32-H2 (v2.0), ESP32-C6 (v1.0 legacy), ESP-IDF v5.5.1+  
+**Compatible**: ESP32-H2 (v2.0), ESP32-C6 (v1.0 legacy), ESP-IDF v5.5.3+  
 **License**: GPL v3 (Software) / CC BY-NC-SA 4.0 (Hardware)  
 **Features**: 
 - 6-endpoint design (ENV, RAIN, DS18B20, WIND_SPEED, WIND_DIR, LIGHT)

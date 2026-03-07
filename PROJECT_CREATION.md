@@ -117,7 +117,7 @@ Consider modifying for weather station specific features:
 ## Testing Checklist
 
 Before first use, verify:
-- [ ] ESP-IDF environment is set up (v5.5.1+)
+- [ ] ESP-IDF environment is set up (v5.5.3+)
 - [ ] ESP32-C6 or ESP32-H2 hardware available
 - [ ] BME280 sensor connected to I2C (GPIO 6/7)
 - [ ] USB cable and COM port identified
