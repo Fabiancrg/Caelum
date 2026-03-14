@@ -108,7 +108,7 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
             ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START;
             ota_transfer_active = true;
             total_received = 0;
-            total_image_size = message.ota_header.total_image_size;
+            total_image_size = message.ota_header.image_size;
 
             /* CRITICAL: For Sleepy End Devices, prevent ALL sleep modes */
             esp_zb_sleep_enable(false);
@@ -260,7 +260,7 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
         case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_CHECK:
             ESP_LOGI(TAG, "OTA upgrade check - manufacturer: 0x%04X, image_type: 0x%04X, file_version: 0x%08lX, size: %ld",
                      message.ota_header.manufacturer_code, message.ota_header.image_type,
-                     (unsigned long)message.ota_header.file_version, (long)message.ota_header.total_image_size);
+                     (unsigned long)message.ota_header.file_version, (long)message.ota_header.image_size);
             ret = ESP_OK;
             break;
 
