@@ -12,16 +12,28 @@
 #include "nvs_flash.h"
 #include "esp_zigbee_core.h"
 #include "zcl/esp_zigbee_zcl_ota.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_timer.h"
+#include "esp_sleep.h"
+#include "esp_pm.h"
 
 static const char *TAG = "ESP_ZB_OTA";
 
 /* OTA upgrade status */
 static esp_zb_zcl_ota_upgrade_status_t ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_OK;
 
+/* OTA in progress flag - used to prevent sleep during transfer */
+static bool ota_transfer_active = false;
+
+/* Power Management lock to prevent CPU frequency scaling and sleep during OTA */
+static esp_pm_lock_handle_t ota_pm_lock = NULL;
+
 /* OTA partition handle */
 static const esp_partition_t *update_partition = NULL;
 static esp_ota_handle_t update_handle = 0;
 static uint32_t total_received = 0;
+static uint32_t total_image_size = 0;
 
 /**
  * @brief Initialize OTA functionality
@@ -29,7 +41,15 @@ static uint32_t total_received = 0;
 esp_err_t esp_zb_ota_init(void)
 {
     ESP_LOGI(TAG, "Initializing Zigbee OTA");
-    
+
+    /* Create Power Management lock to prevent sleep during OTA */
+    esp_err_t ret = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "ota_no_sleep", &ota_pm_lock);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to create PM lock: %s (OTA will still work but may have issues)",
+                 esp_err_to_name(ret));
+        ota_pm_lock = NULL;
+    }
+
     // Get the currently running partition
     const esp_partition_t *running_partition = esp_ota_get_running_partition();
     if (running_partition != NULL) {
@@ -86,16 +106,33 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
         case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START:
             ESP_LOGI(TAG, "=== OTA UPGRADE STARTED ===");
             ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START;
+            ota_transfer_active = true;
             total_received = 0;
+            total_image_size = message.ota_header.total_image_size;
+
+            /* CRITICAL: For Sleepy End Devices, prevent ALL sleep modes */
+            esp_zb_sleep_enable(false);
+            esp_zb_set_rx_on_when_idle(true);
+
+            if (ota_pm_lock != NULL) {
+                ret = esp_pm_lock_acquire(ota_pm_lock);
+                if (ret != ESP_OK) {
+                    ESP_LOGW(TAG, "Failed to acquire PM lock: %s", esp_err_to_name(ret));
+                }
+            }
 
             // Begin OTA update
             ret = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(ret));
                 ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ERROR;
+                if (ota_pm_lock != NULL) esp_pm_lock_release(ota_pm_lock);
+                esp_zb_sleep_enable(true);
+                esp_zb_set_rx_on_when_idle(false);
+                ota_transfer_active = false;
                 return ret;
             }
-            ESP_LOGI(TAG, "OTA write session started");
+            ESP_LOGI(TAG, "OTA write session started (sleep disabled, RX always-on)");
             break;
 
         case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE:
@@ -144,14 +181,20 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(ret));
                 ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ERROR;
+                if (ota_pm_lock != NULL) esp_pm_lock_release(ota_pm_lock);
+                esp_zb_sleep_enable(true);
+                esp_zb_set_rx_on_when_idle(false);
+                ota_transfer_active = false;
                 return ret;
             }
-            
-            // Log progress every ~50KB
-            static uint32_t last_log = 0;
-            if (total_received - last_log > 50000) {
-                ESP_LOGI(TAG, "OTA progress: %ld bytes written", total_received);
-                last_log = total_received;
+
+            // Log progress every ~100KB
+            static uint32_t last_milestone = 0;
+            uint32_t current_milestone = total_received / 100000;
+            if (current_milestone > last_milestone) {
+                ESP_LOGI(TAG, "OTA progress: %ld KB (%.1f%%)", total_received / 1000,
+                         total_image_size > 0 ? (float)total_received / (float)total_image_size * 100.0f : 0.0f);
+                last_milestone = current_milestone;
             }
             break;
 
@@ -163,6 +206,10 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(ret));
                 ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ERROR;
+                if (ota_pm_lock != NULL) esp_pm_lock_release(ota_pm_lock);
+                esp_zb_sleep_enable(true);
+                esp_zb_set_rx_on_when_idle(false);
+                ota_transfer_active = false;
                 return ret;
             }
 
@@ -190,9 +237,15 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
             ESP_LOGI(TAG, "✓ OTA upgrade successful!");
             ESP_LOGI(TAG, "Total received: %ld bytes", total_received);
             ESP_LOGI(TAG, "Next boot will be from: %s", update_partition->label);
-            ESP_LOGI(TAG, "Firmware will enter validation mode on next boot");
+
+            /* Re-enable sleep before reboot */
+            ota_transfer_active = false;
+            esp_zb_sleep_enable(true);
+            esp_zb_set_rx_on_when_idle(false);
+            if (ota_pm_lock != NULL) esp_pm_lock_release(ota_pm_lock);
+
             ESP_LOGI(TAG, "Rebooting in 3 seconds...");
-            
+
             ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_APPLY;
             
             // Small delay to ensure logs are printed
@@ -205,7 +258,9 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
             break;
 
         case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_CHECK:
-            ESP_LOGI(TAG, "OTA upgrade check");
+            ESP_LOGI(TAG, "OTA upgrade check - manufacturer: 0x%04X, image_type: 0x%04X, file_version: 0x%08lX, size: %ld",
+                     message.ota_header.manufacturer_code, message.ota_header.image_type,
+                     (unsigned long)message.ota_header.file_version, (long)message.ota_header.total_image_size);
             ret = ESP_OK;
             break;
 
@@ -217,6 +272,12 @@ esp_err_t zb_ota_upgrade_value_handler(esp_zb_zcl_ota_upgrade_value_message_t me
         case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ERROR:
             ESP_LOGE(TAG, "✗ OTA upgrade error");
             ota_upgrade_status = ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ERROR;
+            ota_transfer_active = false;
+
+            /* Re-enable sleep after OTA failure */
+            esp_zb_sleep_enable(true);
+            esp_zb_set_rx_on_when_idle(false);
+            if (ota_pm_lock != NULL) esp_pm_lock_release(ota_pm_lock);
 
             // Abort OTA if it was started
             if (update_handle) {
