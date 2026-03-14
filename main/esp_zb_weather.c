@@ -376,14 +376,14 @@ static esp_err_t esp_zb_power_save_init(void)
     int cur_cpu_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
     esp_pm_config_t pm_config = {
         .max_freq_mhz = cur_cpu_freq_mhz,
-        .min_freq_mhz = cur_cpu_freq_mhz,
+        .min_freq_mhz = CONFIG_XTAL_FREQ,  // Scale down to XTAL (32 MHz) when idle
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
         .light_sleep_enable = true
 #endif
     };
     rc = esp_pm_configure(&pm_config);
     ESP_LOGI(TAG, "Power management configured: max=%dMHz, min=%dMHz, light_sleep=%s",
-             cur_cpu_freq_mhz, cur_cpu_freq_mhz, 
+             cur_cpu_freq_mhz, CONFIG_XTAL_FREQ,
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
              "enabled"
 #else
@@ -1759,6 +1759,10 @@ static void battery_read_and_report(uint8_t param)
         nvs_close(nvs_handle);
     }
     float battery_voltage = 0.0f;
+    /* Re-init ADC if it was released after previous read */
+    if (adc_handle == NULL) {
+        battery_adc_init();
+    }
     if (adc_handle == NULL) {
         ESP_LOGE(BATTERY_TAG, "ADC not initialized, using simulated value");
         battery_voltage = 3.7f;  // Fallback simulated value
@@ -1847,8 +1851,22 @@ skip_adc:
     if (ret != ESP_OK) {
         ESP_LOGE(BATTERY_TAG, "❌ Failed to update battery percentage: %s", esp_err_to_name(ret));
     }
-    ESP_LOGI(BATTERY_TAG, "🔋 Li-Ion Battery: %.2fV (%.0f%%) (attributes updated)", 
+    ESP_LOGI(BATTERY_TAG, "🔋 Li-Ion Battery: %.2fV (%.0f%%) (attributes updated)",
              battery_voltage, percentage);
+
+    /* Power optimization: release ADC peripheral so it can power down during sleep */
+    if (adc_handle != NULL) {
+        adc_oneshot_del_unit(adc_handle);
+        adc_handle = NULL;
+    }
+    if (adc_cali_handle != NULL) {
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+        adc_cali_delete_scheme_curve_fitting(adc_cali_handle);
+#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+        adc_cali_delete_scheme_line_fitting(adc_cali_handle);
+#endif
+        adc_cali_handle = NULL;
+    }
 }
 
 /* Rain gauge initialization and handlers */

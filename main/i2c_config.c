@@ -20,8 +20,8 @@ esp_err_t i2c_buses_init(void)
         .mode = I2C_MODE_MASTER,
         .sda_io_num = I2C_BUS1_SDA_GPIO,
         .scl_io_num = I2C_BUS1_SCL_GPIO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,  // Use external pull-ups only (saves ~140µA)
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
         .master.clk_speed = 100000,  // 100 kHz for compatibility
     };
     
@@ -38,8 +38,8 @@ esp_err_t i2c_buses_init(void)
         .mode = I2C_MODE_MASTER,
         .sda_io_num = I2C_BUS2_SDA_GPIO,
         .scl_io_num = I2C_BUS2_SCL_GPIO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,  // Use external pull-ups only (saves ~140µA)
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
         .master.clk_speed = 100000,  // 100 kHz
     };
     

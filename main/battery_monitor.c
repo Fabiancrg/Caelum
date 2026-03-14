@@ -107,6 +107,14 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
 {
     if (!voltage_mv) return ESP_ERR_INVALID_ARG;
 
+    /* Re-init ADC if it was released after previous read */
+    if (adc_handle == NULL) {
+        esp_err_t ret = battery_monitor_init();
+        if (ret != ESP_OK) {
+            return ret;
+        }
+    }
+
     /* Enable MOSFETs to connect battery to voltage divider */
     gpio_set_level(BATTERY_ENABLE_GPIO, 1);
     vTaskDelay(pdMS_TO_TICKS(MOSFET_SETTLE_TIME_MS));
@@ -153,8 +161,23 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
     last_voltage_mv = *voltage_mv;
     last_percentage = battery_voltage_to_percentage(*voltage_mv);
 
-    ESP_LOGI(TAG, "Battery: %d mV (%d%%) [ADC raw: %d, divider: %d mV]", 
+    ESP_LOGI(TAG, "Battery: %d mV (%d%%) [ADC raw: %d, divider: %d mV]",
              *voltage_mv, last_percentage, adc_raw_avg, voltage_divider_mv);
+
+    /* Power optimization: release ADC peripheral so it can power down during sleep */
+    if (adc_handle != NULL) {
+        adc_oneshot_del_unit(adc_handle);
+        adc_handle = NULL;
+    }
+    if (adc_cali_handle != NULL) {
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+        adc_cali_delete_scheme_curve_fitting(adc_cali_handle);
+#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+        adc_cali_delete_scheme_line_fitting(adc_cali_handle);
+#endif
+        adc_cali_handle = NULL;
+        adc_calibrated = false;
+    }
 
     return ESP_OK;
 }
