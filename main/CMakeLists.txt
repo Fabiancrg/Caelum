@@ -14,6 +14,7 @@ idf_component_register(
          "i2c_config.c"
          "battery_monitor.c"
          "anemometer.c"
+         "lps22hb.c"
          "dps368.c"
          "as5600.c"
          "veml7700.c"

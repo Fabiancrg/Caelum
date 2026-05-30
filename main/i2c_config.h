@@ -13,13 +13,13 @@ extern "C" {
 #endif
 
 /* I2C Bus handles */
-extern i2c_bus_handle_t i2c_bus1;  // Environmental sensors: SHT4x + DPS368
+extern i2c_bus_handle_t i2c_bus1;  // Environmental sensors: SHT4x + LPS22HB
 extern i2c_bus_handle_t i2c_bus2;  // Wind & Light sensors: AS5600 + VEML7700
 
 /**
  * @brief Initialize both I2C buses for hardware v2.0
  * 
- * Bus 1 (GPIO10/11): SHT4x temperature/humidity + DPS368 pressure
+ * Bus 1 (GPIO10/11): SHT4x temperature/humidity + LPS22HB pressure
  * Bus 2 (GPIO1/2): AS5600 wind direction + VEML7700 light sensor
  * 
  * @return ESP_OK on success, ESP_FAIL otherwise

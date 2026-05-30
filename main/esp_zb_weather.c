@@ -22,7 +22,6 @@
 #include "esp_zb_ota.h"
 #include "sleep_manager.h"
 #include "driver/gpio.h"
-#include "bme280_app.h"
 #include "sensor_if.h"
 #include "i2c_bus.h"
 #include "i2c_config.h"
@@ -30,7 +29,6 @@
 #include "weather_driver.h"
 #include "battery_monitor.h"
 #include "anemometer.h"
-#include "dps368.h"
 #include "as5600.h"
 #include "veml7700.h"
 #include "esp_adc/adc_oneshot.h"
@@ -196,7 +194,7 @@ static void debug_led_blink_red(void)
 }
 
 /* Rain gauge configuration */
-#define RAIN_GAUGE_GPIO         12              // GPIO pin for rain gauge reed switch
+#define RAIN_GAUGE_GPIO         13              // GPIO pin for rain sensor (DRV5032DULPG)
 #define RAIN_MM_PER_PULSE       0.36f           // mm of rain per bucket tip (adjust for your sensor)
 
 typedef enum {
@@ -212,7 +210,7 @@ typedef struct {
     bool force_attribute;
 } rain_evt_t;
 
-/* v2.0: Pulse counter removed - only rain gauge on GPIO12 */
+/* v2.0: Pulse counter removed - only rain gauge on GPIO13 */
 
 static QueueHandle_t rain_gauge_evt_queue = NULL;
 static float total_rainfall_mm = 0.0f;
@@ -245,7 +243,7 @@ static uint32_t connection_retry_count = 0;
 /********************* Define functions **************************/
 static void builtin_button_callback(button_action_t action);
 static void factory_reset_device(uint8_t param);
-static void bme280_read_and_report(uint8_t param);
+static void env_read_and_report(uint8_t param);
 static void periodic_sensor_report_callback(void *arg);
 static void start_periodic_reading(void);
 static void stop_periodic_reading(void);
@@ -261,6 +259,15 @@ static void ds18b20_init(void);
 static void ds18b20_read_and_report(uint8_t param);
 static esp_err_t battery_adc_init(void);
 static void battery_read_and_report(uint8_t param);
+
+static bool i2c_addr_present(const uint8_t *list, int count, uint8_t addr)
+{
+    for (int i = 0; i < count; ++i) {
+        if (list[i] == addr) return true;
+    }
+    return false;
+}
+
 static esp_err_t deferred_driver_init(void)
 {
     /* Initialize builtin button with callback for factory reset */
@@ -282,54 +289,61 @@ static esp_err_t deferred_driver_init(void)
     i2c_bus_handle_t i2c_bus1 = i2c_get_bus1();
     i2c_bus_handle_t i2c_bus2 = i2c_get_bus2();
     
-    /* Initialize I2C Bus 1 sensors: SHT4x + DPS368 */
-    ESP_LOGI(TAG, "🌡️  Initializing Bus 1 sensors (SHT4x + DPS368)...");
+    /* Initialize I2C Bus 1 sensors: SHT4x + LPS22HB */
+    ESP_LOGI(TAG, "🌡️  Initializing Bus 1 sensors (SHT4x + LPS22HB)...");
     
-    /* Try initializing environmental sensor (SHT4x/BME280/AHT20+BMP280 combo) */
+    /* Try initializing environmental sensor (SHT4x + LPS22HB) */
     ret = sensor_init(i2c_bus1);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "No environmental sensor found on Bus 1 - continuing");
     } else {
         sensor_type_t st = sensor_get_type();
-        if (st == SENSOR_TYPE_BME280) {
-            ESP_LOGI(TAG, "✅ Detected BME280 on Bus 1");
-        } else if (st == SENSOR_TYPE_SHT41_BMP280) {
-            ESP_LOGI(TAG, "✅ Detected SHT41 + BMP280 combo on Bus 1");
-        } else if (st == SENSOR_TYPE_AHT20_BMP280) {
-            ESP_LOGI(TAG, "✅ Detected AHT20 + BMP280 combo on Bus 1");
+        if (st == SENSOR_TYPE_SHT41_LPS22HB) {
+            ESP_LOGI(TAG, "✅ Detected SHT4x + LPS22HB combo on Bus 1");
+        } else if (st == SENSOR_TYPE_SHT41) {
+            ESP_LOGI(TAG, "✅ Detected SHT4x on Bus 1 (no pressure)");
+        } else if (st == SENSOR_TYPE_LPS22HB) {
+            ESP_LOGI(TAG, "✅ Detected LPS22HB on Bus 1 (pressure + temperature)");
         } else {
             ESP_LOGI(TAG, "✅ Environmental sensor initialized (type=%d)", st);
         }
     }
     
-    /* Initialize DPS368 pressure sensor */
-    ret = dps368_init(i2c_bus1);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "DPS368 not found or initialization failed - pressure data unavailable");
-    } else {
-        ESP_LOGI(TAG, "✅ DPS368 pressure sensor initialized");
-    }
-    
     /* Initialize I2C Bus 2 sensors: AS5600 + VEML7700 */
     ESP_LOGI(TAG, "🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...");
-    
-    /* Initialize AS5600 wind direction sensor */
-    ret = as5600_init(i2c_bus2);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "AS5600 not found or initialization failed - wind direction unavailable");
+
+    uint8_t bus2_found[32];
+    int bus2_count = i2c_bus_scan(i2c_bus2, bus2_found, sizeof(bus2_found));
+    if (bus2_count <= 0) {
+        ESP_LOGW(TAG, "No I2C devices detected on Bus 2 - skipping AS5600/VEML7700 init");
     } else {
-        ESP_LOGI(TAG, "✅ AS5600 wind direction sensor initialized");
+        bool has_as5600 = i2c_addr_present(bus2_found, bus2_count, AS5600_I2C_ADDR);
+        bool has_veml = i2c_addr_present(bus2_found, bus2_count, VEML7700_I2C_ADDR);
+
+        if (has_as5600) {
+            ret = as5600_init(i2c_bus2);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "AS5600 not found or initialization failed - wind direction unavailable");
+            } else {
+                ESP_LOGI(TAG, "✅ AS5600 wind direction sensor initialized");
+            }
+        } else {
+            ESP_LOGW(TAG, "AS5600 not detected on Bus 2 - skipping init");
+        }
+
+        if (has_veml) {
+            ret = veml7700_init(i2c_bus2);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "VEML7700 not found or initialization failed - light data unavailable");
+            } else {
+                ESP_LOGI(TAG, "✅ VEML7700 light sensor initialized");
+            }
+        } else {
+            ESP_LOGW(TAG, "VEML7700 not detected on Bus 2 - skipping init");
+        }
     }
     
-    /* Initialize VEML7700 light sensor */
-    ret = veml7700_init(i2c_bus2);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "VEML7700 not found or initialization failed - light data unavailable");
-    } else {
-        ESP_LOGI(TAG, "✅ VEML7700 light sensor initialized");
-    }
-    
-    /* Initialize rain gauge (GPIO12) */
+    /* Initialize rain gauge (GPIO13) */
     ESP_LOGI(TAG, "🌧️  Initializing rain gauge...");
     rain_gauge_init();
     
@@ -580,7 +594,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
              * Update attributes (but don't force reports) so coordinator can read current values.
              * Actual reports will be sent based on local and coordinator's reporting configuration. */
             ESP_LOGI(TAG, "📊 Scheduling initial sensor data updates after network join");
-            esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 2000); // Update in 2 seconds
+            esp_zb_scheduler_alarm((esp_zb_callback_t)env_read_and_report, 0, 2000); // Update in 2 seconds
             // Queue rain gauge flush to publish current total after network join
             rain_gauge_request_flush(false, true);
             // v2.0: No separate pulse counter
@@ -731,7 +745,7 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
                 int16_t temp_raw = report_attr_message->attribute.data.value ? 
                                  *(int16_t*)report_attr_message->attribute.data.value : 0;
                 if (report_attr_message->src_endpoint == HA_ESP_ENV_SENSOR_ENDPOINT) {
-                    ESP_LOGI(TAG, "📡 BME280 Temp: %.1f°C", temp_raw / 100.0f);
+                    ESP_LOGI(TAG, "📡 Env Temp: %.1f°C", temp_raw / 100.0f);
                 } else if (report_attr_message->src_endpoint == HA_ESP_DS18B20_ENDPOINT) {
                     ESP_LOGI(TAG, "📡 DS18B20 Temp: %.1f°C", temp_raw / 100.0f);
                 }
@@ -833,10 +847,10 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_ep_list_t *esp_zb_ep_list = esp_zb_ep_list_create();
 
 
-    /* Create BME280 environmental sensor endpoint */
+    /* Create environmental sensor endpoint */
     esp_zb_cluster_list_t *esp_zb_bme280_clusters = esp_zb_zcl_cluster_list_create();
     
-    /* Create Basic cluster for BME280 endpoint */
+    /* Create Basic cluster for environmental sensor endpoint */
     esp_zb_basic_cluster_cfg_t basic_bme280_cfg = {
         .zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE,
         .power_source = 0x03,  // 0x03 = Battery
@@ -883,7 +897,7 @@ static void esp_zb_task(void *pvParameters)
      * flag for reporting configuration to be stored in zb_storage partition and persist across reboots */
     int16_t temp_value = 0x8000;  // Invalid/unknown temperature value initially
     int16_t temp_min = -40 * 100;  // -40°C in centidegrees  
-    int16_t temp_max = 85 * 100;   // 85°C in centidegrees (BME280 range)
+    int16_t temp_max = 85 * 100;   // 85°C in centidegrees (sensor range)
     esp_zb_attribute_list_t *esp_zb_temperature_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT);
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(esp_zb_temperature_cluster, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, 
                                             ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_S16, 
@@ -916,7 +930,7 @@ static void esp_zb_task(void *pvParameters)
     ESP_ERROR_CHECK(esp_zb_pressure_meas_cluster_add_attr(esp_zb_pressure_cluster, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_MAX_VALUE_ID, &pressure_max));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_pressure_meas_cluster(esp_zb_bme280_clusters, esp_zb_pressure_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
-    /* Add Identify cluster for BME280 endpoint */
+    /* Add Identify cluster for environmental sensor endpoint */
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(esp_zb_bme280_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
     
     /* Add Power Configuration cluster for battery monitoring */
@@ -949,7 +963,7 @@ static void esp_zb_task(void *pvParameters)
     
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(esp_zb_bme280_clusters, esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 
-    /* Add OTA client cluster to BME280 endpoint for firmware updates */
+    /* Add OTA client cluster to environmental sensor endpoint for firmware updates */
 #ifdef OTA_FILE_VERSION
     uint32_t ota_file_version = OTA_FILE_VERSION;
 #else
@@ -1077,7 +1091,7 @@ static void esp_zb_task(void *pvParameters)
         .manufacturer_name = ESP_MANUFACTURER_NAME,
         .model_identifier = ESP_MODEL_IDENTIFIER,
     };
-    /* Add manufacturer info only to primary endpoint (BME280). Basic cluster is
+    /* Add manufacturer info only to primary endpoint (env sensor). Basic cluster is
      * intentionally not present on other endpoints to reduce coordinator reads.
      */
     esp_zcl_utility_add_ep_basic_manufacturer_info(esp_zb_ep_list, HA_ESP_ENV_SENSOR_ENDPOINT, &info);
@@ -1201,8 +1215,8 @@ static void factory_reset_device(uint8_t param)
 
 
 
-/* BME280 sensor reading and reporting functions */
-static void bme280_read_and_report(uint8_t param)
+/* Environmental sensor reading and reporting functions */
+static void env_read_and_report(uint8_t param)
 {
     float temperature = 0.0f, humidity = 0.0f, pressure = 0.0f;
     esp_err_t ret;
@@ -1266,7 +1280,7 @@ static void bme280_read_and_report(uint8_t param)
         ESP_LOGW(TAG, "sensor_read_pressure failed: %s", esp_err_to_name(ret));
     }
     
-    /* BME280 automatically returns to sleep mode after forced measurement.
+    /* Sensors automatically return to sleep mode after forced measurement.
      * No explicit sleep call needed - sensor is already in low-power state. */
     
     /* This function can be called by:
@@ -1286,15 +1300,15 @@ static void periodic_sensor_report_callback(void *arg)
 {
     if (zigbee_network_connected) {
         ESP_LOGI(TAG, "⏰ Periodic sensor read timer fired (5-minute interval)");
-        ESP_LOGI(TAG, "📊 Updating all endpoints: EP1=BME280, EP2=Rain, EP3=Pulse, EP4=DS18B20");
+        ESP_LOGI(TAG, "📊 Updating all endpoints: EP1=Env, EP2=Rain, EP4=DS18B20");
         
         /* Schedule sensor reads via Zigbee scheduler to avoid ISR context issues.
          * Note: These functions update Zigbee attributes but don't force reporting.
          * The Zigbee stack will automatically send reports based on the coordinator's
          * reporting configuration (min/max intervals, reportable change thresholds). */
         
-        /* Endpoint 1: BME280 (temperature, humidity, pressure, battery) */
-        esp_zb_scheduler_alarm((esp_zb_callback_t)bme280_read_and_report, 0, 100);
+        /* Endpoint 1: Environmental sensors (temperature, humidity, pressure, battery) */
+        esp_zb_scheduler_alarm((esp_zb_callback_t)env_read_and_report, 0, 100);
         
         /* Endpoint 4: DS18B20 temperature sensor */
         esp_zb_scheduler_alarm((esp_zb_callback_t)ds18b20_read_and_report, 0, 200);
@@ -2065,7 +2079,7 @@ void app_main(void)
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }
 
-/* v2.0: Pulse counter removed - only rain gauge (GPIO12) and anemometer (GPIO14) remain */
+/* v2.0: Pulse counter removed - only rain gauge (GPIO13) and anemometer (GPIO14) remain */
 
 /********************* DS18B20 Temperature Sensor Functions ***************************/
 

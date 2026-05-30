@@ -15,7 +15,7 @@ i2c_bus_handle_t i2c_bus2 = NULL;
 
 esp_err_t i2c_buses_init(void)
 {
-    /* Configure I2C Bus 1 - Environmental sensors (SHT4x + DPS368) */
+    /* Configure I2C Bus 1 - Environmental sensors (SHT4x + LPS22HB) */
     i2c_config_t i2c1_conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = I2C_BUS1_SDA_GPIO,
@@ -30,7 +30,7 @@ esp_err_t i2c_buses_init(void)
         ESP_LOGE(TAG, "Failed to create I2C Bus 1");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "I2C Bus 1 initialized (GPIO%d/GPIO%d) - SHT4x + DPS368", 
+    ESP_LOGI(TAG, "I2C Bus 1 initialized (GPIO%d/GPIO%d) - SHT4x + LPS22HB", 
              I2C_BUS1_SDA_GPIO, I2C_BUS1_SCL_GPIO);
 
     /* Configure I2C Bus 2 - Wind & Light sensors (AS5600 + VEML7700) */

@@ -5,13 +5,12 @@
 
 typedef enum {
     SENSOR_TYPE_NONE = 0,
-    SENSOR_TYPE_BME280,
-    SENSOR_TYPE_AHT20_BMP280,
     SENSOR_TYPE_SHT41,
-    SENSOR_TYPE_SHT41_BMP280,
+    SENSOR_TYPE_SHT41_LPS22HB,
+    SENSOR_TYPE_LPS22HB,
 } sensor_type_t;
 
-// Initialize selected sensor stack (either BME280 or AHT20+BMP280)
+// Initialize selected sensor stack (SHT4x + LPS22HB)
 esp_err_t sensor_init(i2c_bus_handle_t i2c_bus);
 
 // Return detected sensor type (after sensor_init)

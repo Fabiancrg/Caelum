@@ -21,7 +21,7 @@
 #define ED_KEEP_ALIVE                   15000                                /* 15000 millisecond - poll parent every 15s */
 
 /* Hardware v2.0 Endpoints */
-#define HA_ESP_ENV_SENSOR_ENDPOINT      1                                    /* Environmental sensors (SHT4x + DPS368) via I2C Bus 1 */
+#define HA_ESP_ENV_SENSOR_ENDPOINT      1                                    /* Environmental sensors (SHT4x + LPS22HB) via I2C Bus 1 */
 #define HA_ESP_RAIN_GAUGE_ENDPOINT      2                                    /* Rain gauge sensor (reed switch) */
 #define HA_ESP_DS18B20_ENDPOINT         3                                    /* DS18B20 temperature sensor (GPIO24) */
 #define HA_ESP_WIND_SPEED_ENDPOINT      4                                    /* Anemometer (SS445P hall sensor) */
@@ -37,15 +37,16 @@
 
 /* GPIO Pin Configuration - Hardware v2.0 */
 /* I2C Bus 1 - Environmental sensors */
-#define I2C_BUS1_SDA_GPIO               GPIO_NUM_10                          /* I2C Bus 1 SDA - SHT4x + DPS368 */
-#define I2C_BUS1_SCL_GPIO               GPIO_NUM_11                          /* I2C Bus 1 SCL - SHT4x + DPS368 */
+#define I2C_BUS1_SDA_GPIO               GPIO_NUM_10                          /* I2C Bus 1 SDA - SHT4x + LPS22HB */
+#define I2C_BUS1_SCL_GPIO               GPIO_NUM_11                          /* I2C Bus 1 SCL - SHT4x + LPS22HB */
 
 /* I2C Bus 2 - Wind and light sensors */
 #define I2C_BUS2_SDA_GPIO               GPIO_NUM_1                           /* I2C Bus 2 SDA - AS5600 + VEML7700 */
 #define I2C_BUS2_SCL_GPIO               GPIO_NUM_2                           /* I2C Bus 2 SCL - AS5600 + VEML7700 */
 
 /* Digital sensors */
-#define RAIN_WAKE_GPIO                  GPIO_NUM_12                          /* Rain gauge reed switch (pulse counter) */
+#define RAIN_WAKE_GPIO                  GPIO_NUM_13                          /* Rain sensor (DRV5032DULPG) */
+#define LPS22HB_INT_GPIO                GPIO_NUM_12                          /* LPS22HB INT_DRDY */
 #define DS18B20_GPIO                    GPIO_NUM_24                          /* DS18B20 1-Wire temperature sensor */
 #define ANEMOMETER_GPIO                 GPIO_NUM_14                          /* Anemometer SS445P hall sensor (pulse counter) */
 
