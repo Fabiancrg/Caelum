@@ -64,7 +64,7 @@
 
 /* Basic manufacturer information - now using CMakeLists.txt definitions */
 #define ESP_MANUFACTURER_NAME "\x09""ESPRESSIF"      /* Customized manufacturer name */
-#define ESP_MODEL_IDENTIFIER "\x06""caelum"          /* Customized model identifier matching CMakeLists.txt project name */
+#define ESP_MODEL_IDENTIFIER "\x0A""caelum_pro"      /* Model identifier (length-prefixed: 10 chars). Distinct from Caelum_Lite's "caelum" so Z2M selects a different converter. */
 
 /* Firmware version information */
 #ifdef FW_VERSION

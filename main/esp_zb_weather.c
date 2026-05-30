@@ -39,6 +39,7 @@
 #include "esp_rom_uart.h"
 #include "driver/rmt_tx.h"
 #include "driver/rmt_rx.h"
+#include <math.h>
 /* Generated header with FW_VERSION / FW_DATE_CODE - created at configure time */
 #include "version.h"
 
@@ -235,12 +236,19 @@ static uint32_t connection_retry_count = 0;
 #define MAX_CONNECTION_RETRIES          20      // Max retries before giving up (10 minutes total)
 
 /* Button action tracking (no state needed for action-based buttons) */
-#define BUS2_PROBE_ENABLED 0
+#define BUS2_PROBE_ENABLED 1
+
+/* Bus 2 sensor availability (set during deferred_driver_init) */
+static bool as5600_available = false;
+static bool veml7700_available = false;
 
 /********************* Define functions **************************/
 static void builtin_button_callback(button_action_t action);
 static void factory_reset_device(uint8_t param);
 static void env_read_and_report(uint8_t param);
+static void wind_speed_read_and_report(uint8_t param);
+static void wind_dir_read_and_report(uint8_t param);
+static void light_read_and_report(uint8_t param);
 static void periodic_sensor_report_callback(void *arg);
 static void start_periodic_reading(void);
 static void stop_periodic_reading(void);
@@ -323,6 +331,7 @@ static esp_err_t deferred_driver_init(void)
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "AS5600 not found or initialization failed - wind direction unavailable");
             } else {
+                as5600_available = true;
                 ESP_LOGI(TAG, "✅ AS5600 wind direction sensor initialized");
             }
         } else {
@@ -334,6 +343,7 @@ static esp_err_t deferred_driver_init(void)
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "VEML7700 not found or initialization failed - light data unavailable");
             } else {
+                veml7700_available = true;
                 ESP_LOGI(TAG, "✅ VEML7700 light sensor initialized");
             }
         } else {
@@ -508,10 +518,45 @@ static void configure_analog_input_reporting(uint8_t param)
     esp_zb_lock_acquire(portMAX_DELAY);
     esp_zb_zcl_config_report_cmd_req(&rain_report_cmd);
     esp_zb_lock_release();
-    
+
     ESP_LOGI(RAIN_TAG, "📋 Rain gauge reporting configured: change=%.1f mm, max_interval=3600s", rain_reportable_change);
-    
-    /* v2.0: Pulse counter reporting removed */
+
+    /* Configure reporting for EP4 (wind speed) and EP5 (wind direction).
+     * Both are Analog Input presentValue (float), same mechanism as the rain gauge. */
+    static float wind_speed_change = 0.5f;   // report on >=0.5 m/s change
+    static float wind_dir_change = 5.0f;     // report on >=5 degree change
+
+    const uint8_t wind_eps[2] = { HA_ESP_WIND_SPEED_ENDPOINT, HA_ESP_WIND_DIR_ENDPOINT };
+    float *wind_changes[2] = { &wind_speed_change, &wind_dir_change };
+    const char *wind_names[2] = { "wind speed", "wind direction" };
+
+    for (int i = 0; i < 2; i++) {
+        esp_zb_zcl_config_report_cmd_t cmd = {0};
+        cmd.zcl_basic_cmd.dst_addr_u.addr_short = esp_zb_get_short_address();
+        cmd.zcl_basic_cmd.dst_endpoint = wind_eps[i];
+        cmd.zcl_basic_cmd.src_endpoint = wind_eps[i];
+        cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+        cmd.clusterID = ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT;
+
+        esp_zb_zcl_config_report_record_t record = {
+            .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
+            .attributeID = ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
+            .min_interval = 0,
+            .max_interval = 3600,
+            .reportable_change = wind_changes[i],
+        };
+        cmd.record_number = 1;
+        cmd.record_field = &record;
+
+        esp_zb_lock_acquire(portMAX_DELAY);
+        esp_zb_zcl_config_report_cmd_req(&cmd);
+        esp_zb_lock_release();
+        ESP_LOGI(TAG, "📋 %s reporting configured (EP%d)", wind_names[i], wind_eps[i]);
+    }
+
+    /* EP6 (illuminance) uses the standard Illuminance Measurement cluster; its
+     * reporting is configured by the coordinator (Z2M) via configureReporting. */
 }
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
@@ -600,7 +645,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)env_read_and_report, 0, 2000); // Update in 2 seconds
             // Queue rain gauge flush to publish current total after network join
             rain_gauge_request_flush(false, true);
-            // v2.0: No separate pulse counter
+            esp_zb_scheduler_alarm((esp_zb_callback_t)wind_speed_read_and_report, 0, 2500); // Wind speed
+            esp_zb_scheduler_alarm((esp_zb_callback_t)wind_dir_read_and_report, 0, 3000);   // Wind direction
+            esp_zb_scheduler_alarm((esp_zb_callback_t)light_read_and_report, 0, 3500);      // Illuminance
             esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 4000); // Update in 4 seconds
             
             /* Start periodic sensor reading timer for 15-minute intervals.
@@ -1079,6 +1126,67 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_ds18b20_clusters, endpoint_ds18b20_config);
 
+    /* Create wind speed endpoint (EP4, anemometer on GPIO14).
+     * No standard ZCL cluster for wind speed - use Analog Input presentValue (m/s),
+     * same pattern as the rain gauge. */
+    esp_zb_cluster_list_t *esp_zb_wind_speed_clusters = esp_zb_zcl_cluster_list_create();
+    float wind_speed_value = 0.0f;
+    esp_zb_attribute_list_t *esp_zb_wind_speed_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT);
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(esp_zb_wind_speed_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+                                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
+                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &wind_speed_value));
+    char wind_speed_desc[] = "\x0A""Wind Speed";  // length-prefixed: 10 chars
+    esp_zb_analog_input_cluster_add_attr(esp_zb_wind_speed_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, wind_speed_desc);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(esp_zb_wind_speed_clusters, esp_zb_wind_speed_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(esp_zb_wind_speed_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    esp_zb_endpoint_config_t endpoint_wind_speed_config = {
+        .endpoint = HA_ESP_WIND_SPEED_ENDPOINT,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
+        .app_device_version = 0
+    };
+    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_wind_speed_clusters, endpoint_wind_speed_config);
+
+    /* Create wind direction endpoint (EP5, AS5600 on I2C Bus 2).
+     * Analog Input presentValue in compass degrees (0-360). */
+    esp_zb_cluster_list_t *esp_zb_wind_dir_clusters = esp_zb_zcl_cluster_list_create();
+    float wind_dir_value = 0.0f;
+    esp_zb_attribute_list_t *esp_zb_wind_dir_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT);
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(esp_zb_wind_dir_cluster, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+                                            ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
+                                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &wind_dir_value));
+    char wind_dir_desc[] = "\x0E""Wind Direction";  // length-prefixed: 14 chars
+    esp_zb_analog_input_cluster_add_attr(esp_zb_wind_dir_cluster, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_DESCRIPTION_ID, wind_dir_desc);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_analog_input_cluster(esp_zb_wind_dir_clusters, esp_zb_wind_dir_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(esp_zb_wind_dir_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    esp_zb_endpoint_config_t endpoint_wind_dir_config = {
+        .endpoint = HA_ESP_WIND_DIR_ENDPOINT,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID,
+        .app_device_version = 0
+    };
+    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_wind_dir_clusters, endpoint_wind_dir_config);
+
+    /* Create illuminance endpoint (EP6, VEML7700 on I2C Bus 2).
+     * Standard ZCL Illuminance Measurement cluster (0x0400).
+     * MeasuredValue = 10000 * log10(lux) + 1 per ZCL spec. */
+    esp_zb_cluster_list_t *esp_zb_light_clusters = esp_zb_zcl_cluster_list_create();
+    esp_zb_illuminance_meas_cluster_cfg_t light_cfg = {
+        .measured_value = 0,
+        .min_value = 0,
+        .max_value = 0xFFFE,
+    };
+    esp_zb_attribute_list_t *esp_zb_light_cluster = esp_zb_illuminance_meas_cluster_create(&light_cfg);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_illuminance_meas_cluster(esp_zb_light_clusters, esp_zb_light_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_identify_cluster(esp_zb_light_clusters, esp_zb_identify_cluster_create(NULL), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    esp_zb_endpoint_config_t endpoint_light_config = {
+        .endpoint = HA_ESP_LIGHT_ENDPOINT,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_LIGHT_SENSOR_DEVICE_ID,
+        .app_device_version = 0
+    };
+    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_light_clusters, endpoint_light_config);
+
     /* Endpoint 4 (Sleep Configuration) removed in light sleep mode.
      * Device uses automatic sleep/wake with standard Zigbee reporting configuration.
      * Reporting intervals controlled by coordinator via configureReporting commands.
@@ -1313,14 +1421,17 @@ static void periodic_sensor_report_callback(void *arg)
         /* Endpoint 1: Environmental sensors (temperature, humidity, pressure, battery) */
         esp_zb_scheduler_alarm((esp_zb_callback_t)env_read_and_report, 0, 100);
         
-        /* Endpoint 4: DS18B20 temperature sensor */
+        /* Endpoint 3: DS18B20 temperature sensor */
         esp_zb_scheduler_alarm((esp_zb_callback_t)ds18b20_read_and_report, 0, 200);
-        
+
         /* Endpoint 2: Rain gauge */
         rain_gauge_request_flush(false, true);
-        
-        /* v2.0: No pulse counter */
-        
+
+        /* Endpoint 4/5/6: wind speed, wind direction, illuminance */
+        esp_zb_scheduler_alarm((esp_zb_callback_t)wind_speed_read_and_report, 0, 500);
+        esp_zb_scheduler_alarm((esp_zb_callback_t)wind_dir_read_and_report, 0, 600);
+        esp_zb_scheduler_alarm((esp_zb_callback_t)light_read_and_report, 0, 700);
+
         /* Battery is read hourly based on its own time tracking */
         esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 400);
     } else {
@@ -2296,6 +2407,87 @@ static void ds18b20_read_and_report(uint8_t param)
         ESP_LOGI(DS18B20_TAG, "✅ DS18B20 Temperature: %.2f°C (attribute updated)", temperature);
     } else {
         ESP_LOGE(DS18B20_TAG, "❌ Failed to update temperature attribute: %s", esp_err_to_name(ret));
+    }
+}
+
+/* Wind speed (anemometer, EP4) - Analog Input presentValue in m/s */
+static void wind_speed_read_and_report(uint8_t param)
+{
+    (void)param;
+    float speed_ms = 0.0f;
+    esp_err_t ret = anemometer_get_wind_speed(&speed_ms);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "anemometer_get_wind_speed failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    ret = esp_zb_zcl_set_attribute_val(HA_ESP_WIND_SPEED_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+                                       ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
+                                       &speed_ms, false);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "💨 Wind speed: %.2f m/s (attribute updated)", speed_ms);
+    } else {
+        ESP_LOGE(TAG, "Failed to update wind speed attribute: %s", esp_err_to_name(ret));
+    }
+}
+
+/* Wind direction (AS5600, EP5) - Analog Input presentValue in compass degrees */
+static void wind_dir_read_and_report(uint8_t param)
+{
+    (void)param;
+    if (!as5600_available) {
+        ESP_LOGD(TAG, "Wind direction skipped - AS5600 not available");
+        return;
+    }
+    float direction = 0.0f;
+    esp_err_t ret = as5600_get_wind_direction(&direction);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "as5600_get_wind_direction failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    ret = esp_zb_zcl_set_attribute_val(HA_ESP_WIND_DIR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+                                       ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
+                                       &direction, false);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "🧭 Wind direction: %.1f° (attribute updated)", direction);
+    } else {
+        ESP_LOGE(TAG, "Failed to update wind direction attribute: %s", esp_err_to_name(ret));
+    }
+}
+
+/* Illuminance (VEML7700, EP6) - standard ZCL Illuminance Measurement (0x0400).
+ * MeasuredValue = 10000 * log10(lux) + 1, clamped to [0, 0xFFFE]. */
+static void light_read_and_report(uint8_t param)
+{
+    (void)param;
+    if (!veml7700_available) {
+        ESP_LOGD(TAG, "Illuminance skipped - VEML7700 not available");
+        return;
+    }
+    float lux = 0.0f;
+    esp_err_t ret = veml7700_read_lux(&lux);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "veml7700_read_lux failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    /* ZCL Illuminance encoding: 0 lux -> 0; otherwise 10000*log10(lux)+1. */
+    uint16_t measured;
+    if (lux <= 0.0f) {
+        measured = 0;
+    } else {
+        float val = 10000.0f * log10f(lux) + 1.0f;
+        if (val < 1.0f) val = 1.0f;
+        if (val > 65534.0f) val = 65534.0f;  // 0xFFFE
+        measured = (uint16_t)val;
+    }
+
+    ret = esp_zb_zcl_set_attribute_val(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_ILLUMINANCE_MEASUREMENT,
+                                       ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ILLUMINANCE_MEASUREMENT_MEASURED_VALUE_ID,
+                                       &measured, false);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "☀️ Illuminance: %.1f lux (ZCL=%u, attribute updated)", lux, measured);
+    } else {
+        ESP_LOGE(TAG, "Failed to update illuminance attribute: %s", esp_err_to_name(ret));
     }
 }
 

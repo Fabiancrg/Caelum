@@ -17,7 +17,7 @@
 #endif
 
 #ifndef OTA_IMAGE_TYPE
-#define OTA_UPGRADE_IMAGE_TYPE    0x1200    // Default image type
+#define OTA_UPGRADE_IMAGE_TYPE    0x1202    // Default image type (Caelum Pro - distinct from Caelum_Lite's 0x1200 so OTA images can't cross-flash)
 #else
 #define OTA_UPGRADE_IMAGE_TYPE    OTA_IMAGE_TYPE    // From CMakeLists.txt
 #endif

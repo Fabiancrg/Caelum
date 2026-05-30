@@ -13,7 +13,7 @@ project(caelum)
 set(PROJECT_VER "1.8")
 set(BUILD_NUMBER 0)
 set(MANUFACTURER_CODE "0xFABC")
-set(IMAGE_TYPE "0x1200")
+set(IMAGE_TYPE "0x1202")   # Caelum Pro - distinct from Caelum_Lite (0x1200) so OTA images cannot cross-flash
 set(ZIGBEE_STACK_VERSION "0x0003")  # Zigbee 3.0
 
 # Convert PROJECT_VER (e.g. 1.1.0) to 0xMMmmpppp format for OTA
