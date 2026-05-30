@@ -161,7 +161,7 @@ static void debug_led_start_blink(void)
     
     if (!led_blink_task_running) {
         led_blink_task_running = true;
-        xTaskCreate(debug_led_blink_task, "led_blink", 2048, NULL, 5, &led_blink_task_handle);
+        xTaskCreate(debug_led_blink_task, "led_blink", 2048, NULL, 1, &led_blink_task_handle);
         ESP_LOGI(TAG, "RGB LED blink started (network joining)");
     }
 }
@@ -239,6 +239,7 @@ static uint32_t connection_retry_count = 0;
 #define MAX_CONNECTION_RETRIES          20      // Max retries before giving up (10 minutes total)
 
 /* Button action tracking (no state needed for action-based buttons) */
+#define BUS2_PROBE_ENABLED 0
 
 /********************* Define functions **************************/
 static void builtin_button_callback(button_action_t action);
@@ -312,6 +313,7 @@ static esp_err_t deferred_driver_init(void)
     /* Initialize I2C Bus 2 sensors: AS5600 + VEML7700 */
     ESP_LOGI(TAG, "🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...");
 
+#if BUS2_PROBE_ENABLED
     uint8_t bus2_found[32];
     int bus2_count = i2c_bus_scan(i2c_bus2, bus2_found, sizeof(bus2_found));
     if (bus2_count <= 0) {
@@ -342,6 +344,9 @@ static esp_err_t deferred_driver_init(void)
             ESP_LOGW(TAG, "VEML7700 not detected on Bus 2 - skipping init");
         }
     }
+#else
+    ESP_LOGW(TAG, "Bus 2 probe disabled - skipping AS5600/VEML7700 init");
+#endif
     
     /* Initialize rain gauge (GPIO13) */
     ESP_LOGI(TAG, "🌧️  Initializing rain gauge...");

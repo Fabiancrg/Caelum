@@ -1,15 +1,3 @@
-ESP-ROM:esp32h2-20221101
-Build:Nov  1 2022
-rst:0x15 (USB_UART_HPSYS),boot:0x8 (SPI_FAST_FLASH_BOOT)
-Saved PC:0x4080648a
---- 0x4080648a: rv_utils_wait_for_intr at /home/fabian/esp/v5.5.3/esp-idf/components/riscv/include/riscv/rv_utils.h:79
---- (inlined by) esp_cpu_wait_for_intr at /home/fabian/esp/v5.5.3/esp-idf/components/esp_hw_support/cpu.c:62
-SPIWP:0xee
-mode:DIO, clock div:1
-load:0x408460f0,len:0x1808
-load:0x4083c2d0,len:0x11a4
-load:0x4083efd0,len:0x309c
-entry 0x4083c2da
 I (23) boot: ESP-IDF v5.5.3-dirty 2nd stage bootloader
 I (23) boot: compile time May 30 2026 15:05:29
 I (24) boot: chip revision: v0.1
@@ -29,393 +17,143 @@ I (82) boot:  4 ota_1            OTA app          00 11 001b0000 001a0000
 I (89) boot:  5 zb_storage       Unknown data     01 81 00350000 00004000
 I (95) boot:  6 zb_fct           Unknown data     01 81 00354000 00001000
 I (102) boot: End of partition table
-I (105) esp_image: segment 0: paddr=00010020 vaddr=42070020 size=197b4h (104372) map
-I (139) esp_image: segment 1: paddr=000297dc vaddr=40800000 size=0683ch ( 26684) load
-I (148) esp_image: segment 2: paddr=00030020 vaddr=42000020 size=6f9e8h (457192) map
-I (264) esp_image: segment 3: paddr=0009fa10 vaddr=4080683c size=0ecf0h ( 60656) load
-I (282) esp_image: segment 4: paddr=000ae708 vaddr=50000000 size=00054h (    84) load
-I (283) esp_image: segment 5: paddr=000ae764 vaddr=50000058 size=0003ch (    60) load
-I (292) boot: Loaded app from partition at offset 0x10000
+I (105) esp_image: segment 0: paddr=00010020 vaddr=42070020 size=19444h (103492) map
+I (139) esp_image: segment 1: paddr=0002946c vaddr=40800000 size=06bach ( 27564) load
+I (148) esp_image: segment 2: paddr=00030020 vaddr=42000020 size=6f5d4h (456148) map
+I (263) esp_image: segment 3: paddr=0009f5fc vaddr=40806bac size=0e980h ( 59776) load
+I (281) esp_image: segment 4: paddr=000adf84 vaddr=50000000 size=00054h (    84) load
+I (283) esp_image: segment 5: paddr=000adfe0 vaddr=50000058 size=0003ch (    60) load
+I (291) boot: Loaded app from partition at offset 0x10000
 I (292) boot: Disabling RNG early entropy source...
 I (307) cpu_start: Unicore app
-I (316) cpu_start: GPIO 23 and 24 are used as console UART I/O pins
+I (315) cpu_start: GPIO 23 and 24 are used as console UART I/O pins
 I (316) cpu_start: Pro cpu start user code
-I (317) cpu_start: cpu freq: 96000000 Hz
+I (316) cpu_start: cpu freq: 96000000 Hz
 I (318) app_init: Application information:
-I (322) app_init: Project name:     caelum
-I (326) app_init: App version:      b324c82-dirty
-I (330) app_init: Compile time:     May 30 2026 15:05:24
-I (335) app_init: ELF file SHA256:  b633764b5...
+I (321) app_init: Project name:     caelum
+I (325) app_init: App version:      89b1321-dirty
+I (330) app_init: Compile time:     May 30 2026 15:10:12
+I (335) app_init: ELF file SHA256:  937e627c6...
 I (339) app_init: ESP-IDF:          v5.5.3-dirty
-I (344) efuse_init: Min chip rev:     v0.0
-I (348) efuse_init: Max chip rev:     v1.99 
-I (352) efuse_init: Chip rev:         v0.1
+I (343) efuse_init: Min chip rev:     v0.0
+I (347) efuse_init: Max chip rev:     v1.99 
+I (351) efuse_init: Chip rev:         v0.1
 I (355) heap_init: Initializing. RAM available for dynamic allocation:
-I (362) heap_init: At 40819C40 len 00033740 (205 KiB): RAM
-I (367) heap_init: At 4084D380 len 00002B60 (10 KiB): RAM
+I (361) heap_init: At 40819C30 len 00033750 (205 KiB): RAM
+I (366) heap_init: At 4084D380 len 00002B60 (10 KiB): RAM
 I (372) heap_init: At 50000094 len 00000F54 (3 KiB): RTCRAM
 I (378) spi_flash: detected chip: gd
-I (381) spi_flash: flash io: qio
+I (380) spi_flash: flash io: qio
 I (384) sleep_gpio: Configure to isolate all GPIO pins in sleep state
-I (390) sleep_gpio: Enable automatic switching of GPIO sleep configuration
-I (416) main_task: Started on CPU0
-I (417) main_task: Calling app_main()
-W (423) rmt: channel resolution loss, real=10666666
-I (424) WEATHER_STATION: Debug RGB LED initialized on GPIO8 (WS2812)
-I (425) ESP_ZB_OTA: Initializing Zigbee OTA
-I (427) ESP_ZB_OTA: Currently running from partition: ota_0 at 0x10000
-I (434) ESP_ZB_OTA: OTA partition found: ota_1 at 0x1b0000 (size: 1703936 bytes)
-I (441) ESP_ZB_OTA: Running stable firmware (not in OTA validation mode)
-I (447) pm: Frequency switching config: CPU_MAX: 96, APB_MAX: 32, APB_MIN: 32, Light sleep: ENABLED
-I (456) WEATHER_STATION: Power management configured: max=96MHz, min=32MHz, light_sleep=enabled
-W (465) sleep: GPIO wakeup source is not available if the peripheral power domain is powered down in sleep
-I (474) WEATHER_STATION: ✅ GPIO wakeup enabled for light sleep
+I (389) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (415) main_task: Started on CPU0
+I (416) main_task: Calling app_main()
+W (422) rmt: channel resolution loss, real=10666666
+I (423) WEATHER_STATION: Debug RGB LED initialized on GPIO8 (WS2812)
+I (424) ESP_ZB_OTA: Initializing Zigbee OTA
+I (426) ESP_ZB_OTA: Currently running from partition: ota_0 at 0x10000
+I (433) ESP_ZB_OTA: OTA partition found: ota_1 at 0x1b0000 (size: 1703936 bytes)
+I (440) ESP_ZB_OTA: Running stable firmware (not in OTA validation mode)
+I (446) pm: Frequency switching config: CPU_MAX: 96, APB_MAX: 32, APB_MIN: 32, Light sleep: ENABLED
+I (455) WEATHER_STATION: Power management configured: max=96MHz, min=32MHz, light_sleep=enabled
+W (463) sleep: GPIO wakeup source is not available if the peripheral power domain is powered down in sleep
+I (473) WEATHER_STATION: ✅ GPIO wakeup enabled for light sleep
 I (479) SLEEP: 🔄 Wake-up #1
-I (482) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
-I (487) SLEEP: ========================================
-I (492) SLEEP: 📊 WAKE-UP STATISTICS
-I (495) SLEEP: ========================================
-I (500) SLEEP: Boot count: 1
-I (503) SLEEP: Rainfall (RTC): 0.00 mm
-I (506) SLEEP: Pulse count (RTC): 0
-I (509) SLEEP: Duty cycle: ~0.3% (awake ~3s per 15min)
-I (514) SLEEP: Sleep efficiency: ~99.7%
-I (518) SLEEP: ========================================
-I (523) SLEEP: 📂 No stored data, starting from 0.0 mm
-I (528) SLEEP: 🔋 Battery capacity: 2500 mAh
-I (532) SLEEP: 📊 Daily consumption: 2.10 mAh
-I (536) SLEEP: 📅 Estimated battery life: 1190 days (~3.3 years)
-I (542) WEATHER_STATION: 🚀 Starting Caelum Weather Station (Battery Mode)
-I (549) WEATHER_STATION: 📦 Firmware: b324c82-dirty (Date: May 30 2026 15:05:24)
-I (557) WEATHER_STATION: ⚙️  OTA: Version=0x01080000, Manufacturer=0xFABC, ImageType=0x1200
-I (565) WEATHER_STATION: Wake reason: RESET
-W (569) WEATHER_STATION: 📡 Network: Disconnected (retries: 0/20)
-I (586) phy: phy_version: 323,2, a8ef10c, Aug  1 2025, 17:46:10
-I (587) phy: libbtbb version: 4515421, Aug  1 2025, 17:46:22
-I (587) sleep_clock: Modem Power, Clock and Reset sleep retention initialization
-I (595) WEATHER_STATION: 🔋 Configured as Sleepy End Device (SED) - rx_on_when_idle=false
-I (601) WEATHER_STATION: 📡 Keep-alive poll interval: 7500 ms (7.5 sec)
-I (608) WEATHER_STATION: 💤 Sleep threshold: 6000 ms (6.0 sec) - production optimized
-I (616) WEATHER_STATION: ⏱️  Parent timeout: 64 minutes
-I (621) WEATHER_STATION: ⚡ Power profile: 0.68mA sleep, 12mA transmit, ~0.83mA average
-I (629) SLEEP: 📂 No stored data, starting from 0.0 mm
-I (634) WEATHER_STATION: Using generated version: FW_VERSION=1.8.0, FW_DATE_CODE=20260530
-I (643) WEATHER_STATION: 📦 OTA client cluster added to endpoint 1 (version: 0x01080000, mfr: 0xFABC, type: 0x1200)
-I (656) WEATHER_STATION: 🔍 Verifying REPORTING flag on attributes...
-I (658) WEATHER_STATION:   Temperature: access=0x05 ✅ REPORTING
-I (664) WEATHER_STATION:   Humidity: access=0x05 ✅ REPORTING
-I (669) WEATHER_STATION:   Pressure: access=0x05 ✅ REPORTING
-I (675) WEATHER_STATION:   Rain gauge: access=0x07 ✅ REPORTING
-I (681) WEATHER_STATION:   DS18B20 temp: access=0x05 ✅ REPORTING
-I (687) WEATHER_STATION:   Battery voltage: access=0x05 ✅ REPORTING
-I (693) WEATHER_STATION:   Battery percentage: access=0x05 ✅ REPORTING
-I (699) WEATHER_STATION: [CFG] Setting Zigbee channel mask: 0x07FFF800
-I (708) main_task: Returned from app_main()
-I (709) WEATHER_STATION: � SED automatic sleep mode configured - device will sleep when idle
-I (718) WEATHER_STATION: ⏳ Starting Zigbee stack main loop...
-I (723) WEATHER_STATION: 💤 Light sleep will be triggered automatically when stack is idle
-I (732) WEATHER_STATION: ZDO signal: ZDO Config Ready (0x17), status: ESP_FAIL
-I (739) WEATHER_STATION: Initialize Zigbee stack
-I (743) WEATHER_STATION: RGB LED blink started (network joining)
-I (752) BUILTIN_BUTTON: Builtin button driver initialized successfully on GPIO9
-I (756) WEATHER_STATION: ⚙️  Initializing hardware v2.0 sensors...
-E (762) i2c.master: this port has not been initialized, please initialize it first
-W (769) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
-I (785) i2c_bus: i2c0 bus inited
-I (787) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
-I (793) I2C_CONFIG: I2C Bus 1 initialized (GPIO10/GPIO11) - SHT4x + LPS22HB
-E (799) i2c.master: this port has not been initialized, please initialize it first
-W (807) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
-I (822) i2c_bus: i2c1 bus inited
-I (825) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
-I (830) I2C_CONFIG: I2C Bus 2 initialized (GPIO1/GPIO2) - AS5600 + VEML7700
-I (837) WEATHER_STATION: 🌡️  Initializing Bus 1 sensors (SHT4x + LPS22HB)...
-I (855) i2c_bus: found i2c device address = 0x44
-I (860) i2c_bus: found i2c device address = 0x5d
-I (865) SENSOR_IF: I2C scan: 2 device(s): 0x44 0x5d
-I (866) SENSOR_IF: Probing for SHT4x...
-I (868) SHT41: sht41_init: probe OK
-I (868) SENSOR_IF: SHT4x probe OK
-I (869) SENSOR_IF: Probing for LPS22HB...
-I (873) LPS22HB: lps22hb_init: probe OK (one-shot mode)
-I (877) SENSOR_IF: LPS22HB probe OK
-I (881) SENSOR_IF: Detected sensor combo: SHT4x + LPS22HB
-I (886) WEATHER_STATION: ✅ Detected SHT4x + LPS22HB combo on Bus 1
-I (892) WEATHER_STATION: 🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...
-E (965) i2c.master: I2C transaction timeout detected
-E (965) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1030) i2c.master: I2C transaction timeout detected
-E (1030) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1096) i2c.master: I2C transaction timeout detected
-E (1096) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1161) i2c.master: I2C transaction timeout detected
-E (1162) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1227) i2c.master: I2C transaction timeout detected
-E (1227) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1292) i2c.master: I2C transaction timeout detected
-E (1293) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1358) i2c.master: I2C transaction timeout detected
-E (1358) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1423) i2c.master: I2C transaction timeout detected
-E (1424) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1489) i2c.master: I2C transaction timeout detected
-E (1489) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1555) i2c.master: I2C transaction timeout detected
-E (1555) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1620) i2c.master: I2C transaction timeout detected
-E (1620) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1686) i2c.master: I2C transaction timeout detected
-E (1686) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1751) i2c.master: I2C transaction timeout detected
-E (1751) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1817) i2c.master: I2C transaction timeout detected
-E (1817) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1882) i2c.master: I2C transaction timeout detected
-E (1882) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (1948) i2c.master: I2C transaction timeout detected
-E (1948) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2013) i2c.master: I2C transaction timeout detected
-E (2014) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2079) i2c.master: I2C transaction timeout detected
-E (2079) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2144) i2c.master: I2C transaction timeout detected
-E (2145) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2210) i2c.master: I2C transaction timeout detected
-E (2210) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2275) i2c.master: I2C transaction timeout detected
-E (2276) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2341) i2c.master: I2C transaction timeout detected
-E (2341) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2406) i2c.master: I2C transaction timeout detected
-E (2407) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2472) i2c.master: I2C transaction timeout detected
-E (2472) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2538) i2c.master: I2C transaction timeout detected
-E (2538) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2603) i2c.master: I2C transaction timeout detected
-E (2603) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2669) i2c.master: I2C transaction timeout detected
-E (2669) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2734) i2c.master: I2C transaction timeout detected
-E (2734) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2800) i2c.master: I2C transaction timeout detected
-E (2800) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2865) i2c.master: I2C transaction timeout detected
-E (2866) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2931) i2c.master: I2C transaction timeout detected
-E (2931) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (2996) i2c.master: I2C transaction timeout detected
-E (2997) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3062) i2c.master: I2C transaction timeout detected
-E (3062) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3127) i2c.master: I2C transaction timeout detected
-E (3128) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3193) i2c.master: I2C transaction timeout detected
-E (3193) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3258) i2c.master: I2C transaction timeout detected
-E (3259) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3324) i2c.master: I2C transaction timeout detected
-E (3324) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3390) i2c.master: I2C transaction timeout detected
-E (3390) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3455) i2c.master: I2C transaction timeout detected
-E (3455) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3521) i2c.master: I2C transaction timeout detected
-E (3521) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3586) i2c.master: I2C transaction timeout detected
-E (3586) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3652) i2c.master: I2C transaction timeout detected
-E (3652) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3717) i2c.master: I2C transaction timeout detected
-E (3717) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3783) i2c.master: I2C transaction timeout detected
-E (3783) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3848) i2c.master: I2C transaction timeout detected
-E (3849) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3914) i2c.master: I2C transaction timeout detected
-E (3914) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (3979) i2c.master: I2C transaction timeout detected
-E (3980) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4045) i2c.master: I2C transaction timeout detected
-E (4045) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4110) i2c.master: I2C transaction timeout detected
-E (4111) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4176) i2c.master: I2C transaction timeout detected
-E (4176) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4241) i2c.master: I2C transaction timeout detected
-E (4242) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4307) i2c.master: I2C transaction timeout detected
-E (4307) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4373) i2c.master: I2C transaction timeout detected
-E (4373) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4438) i2c.master: I2C transaction timeout detected
-E (4438) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4504) i2c.master: I2C transaction timeout detected
-E (4504) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4569) i2c.master: I2C transaction timeout detected
-E (4569) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4635) i2c.master: I2C transaction timeout detected
-E (4635) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4700) i2c.master: I2C transaction timeout detected
-E (4701) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4766) i2c.master: I2C transaction timeout detected
-E (4766) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4831) i2c.master: I2C transaction timeout detected
-E (4832) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4897) i2c.master: I2C transaction timeout detected
-E (4897) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (4962) i2c.master: I2C transaction timeout detected
-E (4963) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5028) i2c.master: I2C transaction timeout detected
-E (5028) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5093) i2c.master: I2C transaction timeout detected
-E (5094) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5159) i2c.master: I2C transaction timeout detected
-E (5159) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5225) i2c.master: I2C transaction timeout detected
-E (5225) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5290) i2c.master: I2C transaction timeout detected
-E (5290) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5356) i2c.master: I2C transaction timeout detected
-E (5356) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5421) i2c.master: I2C transaction timeout detected
-E (5421) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5487) i2c.master: I2C transaction timeout detected
-E (5487) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5552) i2c.master: I2C transaction timeout detected
-E (5552) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5618) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5683) i2c.master: I2C transaction timeout detected
-E (5684) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5749) i2c.master: I2C transaction timeout detected
-E (5749) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5814) i2c.master: I2C transaction timeout detected
-E (5815) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5880) i2c.master: I2C transaction timeout detected
-E (5880) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (5945) i2c.master: I2C transaction timeout detected
-E (5946) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6011) i2c.master: I2C transaction timeout detected
-E (6011) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6076) i2c.master: I2C transaction timeout detected
-E (6077) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6142) i2c.master: I2C transaction timeout detected
-E (6142) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6208) i2c.master: I2C transaction timeout detected
-E (6208) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6273) i2c.master: I2C transaction timeout detected
-E (6273) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6339) i2c.master: I2C transaction timeout detected
-E (6339) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6404) i2c.master: I2C transaction timeout detected
-E (6404) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6470) i2c.master: I2C transaction timeout detected
-E (6470) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6535) i2c.master: I2C transaction timeout detected
-E (6536) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6601) i2c.master: I2C transaction timeout detected
-E (6601) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6666) i2c.master: I2C transaction timeout detected
-E (6667) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6732) i2c.master: I2C transaction timeout detected
-E (6732) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6797) i2c.master: I2C transaction timeout detected
-E (6798) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6863) i2c.master: I2C transaction timeout detected
-E (6863) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6928) i2c.master: I2C transaction timeout detected
-E (6929) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (6994) i2c.master: I2C transaction timeout detected
-E (6994) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7060) i2c.master: I2C transaction timeout detected
-E (7060) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7125) i2c.master: I2C transaction timeout detected
-E (7125) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7191) i2c.master: I2C transaction timeout detected
-E (7191) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7256) i2c.master: I2C transaction timeout detected
-E (7256) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7322) i2c.master: I2C transaction timeout detected
-E (7322) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7387) i2c.master: I2C transaction timeout detected
-E (7387) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7453) i2c.master: I2C transaction timeout detected
-E (7453) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7518) i2c.master: I2C transaction timeout detected
-E (7519) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7584) i2c.master: I2C transaction timeout detected
-E (7584) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7649) i2c.master: I2C transaction timeout detected
-E (7650) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7715) i2c.master: I2C transaction timeout detected
-E (7715) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7780) i2c.master: I2C transaction timeout detected
-E (7781) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7846) i2c.master: I2C transaction timeout detected
-E (7846) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7911) i2c.master: I2C transaction timeout detected
-E (7912) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (7977) i2c.master: I2C transaction timeout detected
-E (7977) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8043) i2c.master: I2C transaction timeout detected
-E (8043) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8108) i2c.master: I2C transaction timeout detected
-E (8108) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8174) i2c.master: I2C transaction timeout detected
-E (8174) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8239) i2c.master: I2C transaction timeout detected
-E (8239) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8305) i2c.master: I2C transaction timeout detected
-E (8305) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8370) i2c.master: I2C transaction timeout detected
-E (8371) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8436) i2c.master: I2C transaction timeout detected
-E (8436) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8501) i2c.master: I2C transaction timeout detected
-E (8502) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8567) i2c.master: I2C transaction timeout detected
-E (8567) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8632) i2c.master: I2C transaction timeout detected
-E (8633) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8698) i2c.master: I2C transaction timeout detected
-E (8698) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8763) i2c.master: I2C transaction timeout detected
-E (8764) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8829) i2c.master: I2C transaction timeout detected
-E (8829) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8895) i2c.master: I2C transaction timeout detected
-E (8895) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (8960) i2c.master: I2C transaction timeout detected
-E (8960) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (9026) i2c.master: I2C transaction timeout detected
-E (9026) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (9091) i2c.master: I2C transaction timeout detected
-E (9091) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-E (9157) i2c.master: I2C transaction timeout detected
-E (9157) i2c.master: probe device timeout. Please check if xfer_timeout_ms and pull-ups are correctly set up
-W (9160) WEATHER_STATION: No I2C devices detected on Bus 2 - skipping AS5600/VEML7700 init
-I (9168) WEATHER_STATION: 🌧️  Initializing rain gauge...
-I (9174) RAIN_GAUGE: Initializing rain gauge on GPIO13 (disabled until network connection)
-I (9182) RAIN_GAUGE: Current rainfall total: 0.00 mm (0 pulses)
-I (9187) SLEEP: 🔄 Wake-up #2
-I (9190) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
-I (9195) RAIN_GAUGE: ✅ GPIO13 configured successfully
-E (14157) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
-E (14157) task_wdt:  - IDLE (CPU 0)
-E (14157) task_wdt: Tasks currently running:
-E (14157) task_wdt: CPU 0: led_blink
-E (14157) task_wdt: Print CPU 0 (current core) registers
+I (481) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
+I (486) SLEEP: ========================================
+I (491) SLEEP: 📊 WAKE-UP STATISTICS
+I (494) SLEEP: ========================================
+I (499) SLEEP: Boot count: 1
+I (502) SLEEP: Rainfall (RTC): 0.00 mm
+I (505) SLEEP: Pulse count (RTC): 0
+I (508) SLEEP: Duty cycle: ~0.3% (awake ~3s per 15min)
+I (513) SLEEP: Sleep efficiency: ~99.7%
+I (517) SLEEP: ========================================
+I (522) SLEEP: 📂 No stored data, starting from 0.0 mm
+I (527) SLEEP: 🔋 Battery capacity: 2500 mAh
+I (531) SLEEP: 📊 Daily consumption: 2.10 mAh
+I (535) SLEEP: 📅 Estimated battery life: 1190 days (~3.3 years)
+I (541) WEATHER_STATION: 🚀 Starting Caelum Weather Station (Battery Mode)
+I (548) WEATHER_STATION: 📦 Firmware: 89b1321-dirty (Date: May 30 2026 15:10:12)
+I (555) WEATHER_STATION: ⚙️  OTA: Version=0x01080000, Manufacturer=0xFABC, ImageType=0x1200
+I (564) WEATHER_STATION: Wake reason: RESET
+W (568) WEATHER_STATION: 📡 Network: Disconnected (retries: 0/20)
+I (584) phy: phy_version: 323,2, a8ef10c, Aug  1 2025, 17:46:10
+I (585) phy: libbtbb version: 4515421, Aug  1 2025, 17:46:22
+I (586) sleep_clock: Modem Power, Clock and Reset sleep retention initialization
+I (593) WEATHER_STATION: 🔋 Configured as Sleepy End Device (SED) - rx_on_when_idle=false
+I (600) WEATHER_STATION: 📡 Keep-alive poll interval: 7500 ms (7.5 sec)
+I (606) WEATHER_STATION: 💤 Sleep threshold: 6000 ms (6.0 sec) - production optimized
+I (614) WEATHER_STATION: ⏱️  Parent timeout: 64 minutes
+I (619) WEATHER_STATION: ⚡ Power profile: 0.68mA sleep, 12mA transmit, ~0.83mA average
+I (627) SLEEP: 📂 No stored data, starting from 0.0 mm
+I (632) WEATHER_STATION: Using generated version: FW_VERSION=1.8.0, FW_DATE_CODE=20260530
+I (642) WEATHER_STATION: 📦 OTA client cluster added to endpoint 1 (version: 0x01080000, mfr: 0xFABC, type: 0x1200)
+I (655) WEATHER_STATION: 🔍 Verifying REPORTING flag on attributes...
+I (657) WEATHER_STATION:   Temperature: access=0x05 ✅ REPORTING
+I (663) WEATHER_STATION:   Humidity: access=0x05 ✅ REPORTING
+I (668) WEATHER_STATION:   Pressure: access=0x05 ✅ REPORTING
+I (674) WEATHER_STATION:   Rain gauge: access=0x07 ✅ REPORTING
+I (680) WEATHER_STATION:   DS18B20 temp: access=0x05 ✅ REPORTING
+I (685) WEATHER_STATION:   Battery voltage: access=0x05 ✅ REPORTING
+I (692) WEATHER_STATION:   Battery percentage: access=0x05 ✅ REPORTING
+I (698) WEATHER_STATION: [CFG] Setting Zigbee channel mask: 0x07FFF800
+I (707) main_task: Returned from app_main()
+I (708) WEATHER_STATION: � SED automatic sleep mode configured - device will sleep when idle
+I (717) WEATHER_STATION: ⏳ Starting Zigbee stack main loop...
+I (722) WEATHER_STATION: 💤 Light sleep will be triggered automatically when stack is idle
+I (731) WEATHER_STATION: ZDO signal: ZDO Config Ready (0x17), status: ESP_FAIL
+I (737) WEATHER_STATION: Initialize Zigbee stack
+I (742) WEATHER_STATION: RGB LED blink started (network joining)
+I (751) BUILTIN_BUTTON: Builtin button driver initialized successfully on GPIO9
+I (754) WEATHER_STATION: ⚙️  Initializing hardware v2.0 sensors...
+E (761) i2c.master: this port has not been initialized, please initialize it first
+W (768) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
+I (784) i2c_bus: i2c0 bus inited
+I (786) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
+I (791) I2C_CONFIG: I2C Bus 1 initialized (GPIO10/GPIO11) - SHT4x + LPS22HB
+E (798) i2c.master: this port has not been initialized, please initialize it first
+W (806) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
+I (821) i2c_bus: i2c1 bus inited
+I (824) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
+I (829) I2C_CONFIG: I2C Bus 2 initialized (GPIO1/GPIO2) - AS5600 + VEML7700
+I (836) WEATHER_STATION: 🌡️  Initializing Bus 1 sensors (SHT4x + LPS22HB)...
+I (854) i2c_bus: found i2c device address = 0x44
+I (858) i2c_bus: found i2c device address = 0x5d
+I (864) SENSOR_IF: I2C scan: 2 device(s): 0x44 0x5d
+I (864) SENSOR_IF: Probing for SHT4x...
+I (867) SHT41: sht41_init: probe OK
+I (867) SENSOR_IF: SHT4x probe OK
+I (868) SENSOR_IF: Probing for LPS22HB...
+I (872) LPS22HB: lps22hb_init: probe OK (one-shot mode)
+I (876) SENSOR_IF: LPS22HB probe OK
+I (879) SENSOR_IF: Detected sensor combo: SHT4x + LPS22HB
+I (885) WEATHER_STATION: ✅ Detected SHT4x + LPS22HB combo on Bus 1
+I (891) WEATHER_STATION: 🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...
+W (898) WEATHER_STATION: Bus 2 probe disabled - skipping AS5600/VEML7700 init
+I (905) WEATHER_STATION: 🌧️  Initializing rain gauge...
+I (910) RAIN_GAUGE: Initializing rain gauge on GPIO13 (disabled until network connection)
+I (918) RAIN_GAUGE: Current rainfall total: 0.00 mm (0 pulses)
+I (924) SLEEP: 🔄 Wake-up #2
+I (926) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
+I (931) RAIN_GAUGE: ✅ GPIO13 configured successfully
+E (5872) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (5872) task_wdt:  - IDLE (CPU 0)
+E (5872) task_wdt: Tasks currently running:
+E (5872) task_wdt: CPU 0: Zigbee_main
+E (5872) task_wdt: Print CPU 0 (current core) registers
 Core  0 register dump:
-MEPC    : 0x4080b554  RA      : 0x4080b550  SP      : 0x408263c0  GP      : 0x40813474  
---- 0x4080b554: vPortYield at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:649
---- 0x4080b550: vPortYield at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:649
-TP      : 0x40826420  T0      : 0x4084e4ec  T1      : 0x00000001  T2      : 0x00000000  
-S0/FP   : 0x000001f4  S1      : 0x00000000  A0      : 0x00000001  A1      : 0x00000001  
-A2      : 0x4084e1c0  A3      : 0x00000004  A4      : 0x00000001  A5      : 0x4081a000  
-A6      : 0x00000004  A7      : 0x00000001  S2      : 0x00000000  S3      : 0x00000000  
-S4      : 0x00000000  S5      : 0x00000000  S6      : 0x00000000  S7      : 0x00000000  
-S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000000  S11     : 0x00000000  
-T3      : 0x60007400  T4      : 0x00000001  T5      : 0x00000000  T6      : 0x00000048  
+MEPC    : 0x4080b48a  RA      : 0x4080b51c  SP      : 0x4084f790  GP      : 0x40813474  
+--- 0x4080b48a: vPortClearInterruptMaskFromISR at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:514
+--- 0x4080b51c: vPortExitCritical at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:627
+TP      : 0x4084fa70  T0      : 0x4001117a  T1      : 0x10000000  T2      : 0x00003000  
+--- 0x4001117a: __retarget_lock_release_recursive in ROM
+S0/FP   : 0x0000000d  S1      : 0x00000280  A0      : 0x00000001  A1      : 0x00000005  
+A2      : 0x40812e78  A3      : 0x600910a4  A4      : 0x00000000  A5      : 0x20001000  
+A6      : 0x00000001  A7      : 0x0000000a  S2      : 0x00000003  S3      : 0x7fffffff  
+S4      : 0x0005674e  S5      : 0x00000000  S6      : 0x000186a0  S7      : 0xfffffffe  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000038  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
 MSTATUS : 0x00001889  MTVEC   : 0x40800001  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
 --- 0x40800001: _vector_table at /home/fabian/esp/v5.5.3/esp-idf/components/riscv/vectors_intc.S:54
 MHARTID : 0x00000000  
