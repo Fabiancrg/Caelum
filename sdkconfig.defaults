@@ -48,3 +48,14 @@ CONFIG_IEEE802154_SLEEP_ENABLE=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y
 # end of light sleep
+
+#
+# Console over native USB (USB-Serial-JTAG) for the ESP32-H2 Supermini.
+# UART stays the primary console; USB is enabled as the secondary so logs
+# reach the USB port. Raise the default log level to INFO (max tracks it via
+# LOG_MAXIMUM_EQUALS_DEFAULT) so INFO messages are emitted at runtime.
+#
+CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# end of console
