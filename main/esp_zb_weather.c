@@ -31,9 +31,6 @@
 #include "anemometer.h"
 #include "as5600.h"
 #include "veml7700.h"
-#include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
 #include "esp_ota_ops.h"
 #include "esp_app_format.h"
 #include "esp_timer.h"
@@ -258,7 +255,6 @@ static void rain_gauge_enable_isr(void);
 static void rain_gauge_disable_isr(void);
 static void ds18b20_init(void);
 static void ds18b20_read_and_report(uint8_t param);
-static esp_err_t battery_adc_init(void);
 static void battery_read_and_report(uint8_t param);
 
 static bool i2c_addr_present(const uint8_t *list, int count, uint8_t addr)
@@ -372,16 +368,11 @@ static esp_err_t deferred_driver_init(void)
     ESP_LOGI(TAG, "🌡️  Initializing DS18B20...");
     ds18b20_init();
     
-    /* Initialize MOSFET-controlled battery monitor (replaces old battery_adc_init) */
+    /* Initialize MOSFET-controlled battery monitor (battery_monitor.c, owns ADC1) */
     ESP_LOGI(TAG, "🔋  Initializing battery monitor...");
     ret = battery_monitor_init();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Battery monitor initialization failed, will use fallback");
-        /* Fallback to old battery_adc_init if new monitor fails */
-        ret = battery_adc_init();
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Battery ADC initialization also failed");
-        }
+        ESP_LOGW(TAG, "Battery monitor initialization failed - readings will use fallback value");
     } else {
         ESP_LOGI(TAG, "✅ Battery monitor initialized (MOSFET-controlled)");
     }
@@ -1593,88 +1584,14 @@ static void rain_gauge_disable_isr(void)
     rain_gauge_request_flush(true, false);
 }
 
-/* Battery monitoring functions */
+/* Battery monitoring functions.
+ * Battery readings are handled by battery_monitor.c (MOSFET-controlled, owns
+ * ADC1). This file only does the time-gating, NVS persistence and Zigbee
+ * reporting around battery_read_voltage(). */
 static const char *BATTERY_TAG = "BATTERY";
 
-#define BATTERY_ADC_CHANNEL     ADC_CHANNEL_4    // GPIO4 on ESP32-H2
-#define BATTERY_ADC_UNIT        ADC_UNIT_1       // ADC1 on ESP32-H2
-#define BATTERY_ADC_ATTEN       ADC_ATTEN_DB_12  // 0-3.1V range (ESP32-H2: actually 0-2.5V)
-
-// For Li-Ion battery monitoring via voltage divider:
-// Hardware: R1=100kΩ, R2=100kΩ → theoretical divider = 2.0
-// However, ESP32-H2 ADC calibration has issues with DB_12 attenuation
-// Empirical calibration: ADC reads 1300mV when actual is 2085mV
-// Correction factor: 2085/1300 = 1.604
-#define BATTERY_VOLTAGE_DIVIDER 2.0f             // Hardware divider (R1≈R2≈100kΩ)
-#define BATTERY_ADC_CORRECTION  1.604f           // ADC calibration correction for ESP32-H2
 #define BATTERY_MIN_VOLTAGE     2.7f             // Li-Ion minimum safe voltage (V)
 #define BATTERY_MAX_VOLTAGE     4.2f             // Li-Ion maximum voltage (V)
-
-// ADC handles
-static adc_oneshot_unit_handle_t adc_handle = NULL;
-static adc_cali_handle_t adc_cali_handle = NULL;
-
-// Initialize ADC for battery monitoring
-static esp_err_t battery_adc_init(void)
-{
-    // Configure ADC1
-    adc_oneshot_unit_init_cfg_t init_config = {
-        .unit_id = BATTERY_ADC_UNIT,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    esp_err_t ret = adc_oneshot_new_unit(&init_config, &adc_handle);
-    if (ret == ESP_ERR_NOT_FOUND || ret == ESP_ERR_INVALID_STATE) {
-        // ADC already initialized - try to continue without creating new unit
-        ESP_LOGW(BATTERY_TAG, "ADC1 already in use, attempting to use without calibration");
-        adc_handle = NULL;  // Will use fallback in battery_read_and_report
-        return ESP_OK;  // Don't fail, just use simulated values
-    } else if (ret != ESP_OK) {
-        ESP_LOGE(BATTERY_TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    // Configure ADC channel
-    adc_oneshot_chan_cfg_t chan_config = {
-        .atten = BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    ret = adc_oneshot_config_channel(adc_handle, BATTERY_ADC_CHANNEL, &chan_config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(BATTERY_TAG, "Failed to configure ADC channel: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    // Initialize ADC calibration
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-    adc_cali_curve_fitting_config_t cali_config = {
-        .unit_id = BATTERY_ADC_UNIT,
-        .atten = BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    ret = adc_cali_create_scheme_curve_fitting(&cali_config, &adc_cali_handle);
-    if (ret == ESP_OK) {
-        ESP_LOGI(BATTERY_TAG, "ADC calibration scheme: Curve Fitting");
-    }
-#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-    adc_cali_line_fitting_config_t cali_config = {
-        .unit_id = BATTERY_ADC_UNIT,
-        .atten = BATTERY_ADC_ATTEN,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    ret = adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali_handle);
-    if (ret == ESP_OK) {
-        ESP_LOGI(BATTERY_TAG, "ADC calibration scheme: Line Fitting");
-    }
-#endif
-    
-    if (ret != ESP_OK) {
-        ESP_LOGW(BATTERY_TAG, "ADC calibration failed, using raw values: %s", esp_err_to_name(ret));
-        adc_cali_handle = NULL;
-    }
-    
-    ESP_LOGI(BATTERY_TAG, "✅ Battery ADC initialized on GPIO4 (ADC1_CH4)");
-    return ESP_OK;
-}
 
 static void battery_read_and_report(uint8_t param)
 {
@@ -1785,54 +1702,21 @@ static void battery_read_and_report(uint8_t param)
         nvs_close(nvs_handle);
     }
     float battery_voltage = 0.0f;
-    /* Re-init ADC if it was released after previous read */
-    if (adc_handle == NULL) {
-        battery_adc_init();
-    }
-    if (adc_handle == NULL) {
-        ESP_LOGE(BATTERY_TAG, "ADC not initialized, using simulated value");
+    /* Read battery via the MOSFET-controlled monitor (battery_monitor.c).
+     * It owns ADC1 exclusively: enables the GPIO3 MOSFET, samples GPIO4, applies
+     * calibration + voltage divider, then releases the ADC unit so it can power
+     * down during sleep. This replaces the old inline ADC path that conflicted
+     * with battery_monitor.c over ADC1 and fell back to a simulated 3.7V. */
+    uint16_t battery_mv = 0;
+    err = battery_read_voltage(&battery_mv);
+    if (err != ESP_OK) {
+        ESP_LOGE(BATTERY_TAG, "battery_read_voltage failed (%s), using simulated value", esp_err_to_name(err));
         battery_voltage = 3.7f;  // Fallback simulated value
     } else {
-        /* Power optimization: Reduced from 10 to 3 samples (better accuracy, still low power) */
-        const int num_samples = 3;
-        int voltage_sum = 0;
-        int raw_sum = 0;
-        for (int i = 0; i < num_samples; i++) {
-            int adc_raw;
-            esp_err_t ret = adc_oneshot_read(adc_handle, BATTERY_ADC_CHANNEL, &adc_raw);
-            if (ret != ESP_OK) {
-                ESP_LOGE(BATTERY_TAG, "ADC read failed: %s", esp_err_to_name(ret));
-                battery_voltage = 3.7f;  // Fallback value
-                goto skip_adc;
-            }
-            raw_sum += adc_raw;  // Track raw ADC values for debugging
-            int voltage_mv;
-            if (adc_cali_handle != NULL) {
-                ret = adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &voltage_mv);
-                if (ret != ESP_OK) {
-                    ESP_LOGE(BATTERY_TAG, "ADC calibration failed: %s", esp_err_to_name(ret));
-                    // Fallback: rough calculation
-                    voltage_mv = (adc_raw * 2500) / 4095;
-                }
-                // Apply ESP32-H2 ADC correction factor (empirically determined)
-                voltage_mv = (int)((float)voltage_mv * BATTERY_ADC_CORRECTION);
-            } else {
-                // No calibration available
-                voltage_mv = (adc_raw * 2500) / 4095;
-                voltage_mv = (int)((float)voltage_mv * BATTERY_ADC_CORRECTION);
-            }
-            voltage_sum += voltage_mv;
-            /* Power optimization: Removed 10ms delay - ADC can sample back-to-back (saves ~90% overhead) */
-        }
-        // Calculate average voltage at ADC input (in volts)
-        float adc_voltage = (voltage_sum / num_samples) / 1000.0f;
-        int avg_raw = raw_sum / num_samples;
-        // Apply voltage divider multiplier to get actual battery voltage
-        battery_voltage = adc_voltage * BATTERY_VOLTAGE_DIVIDER;
-        ESP_LOGI(BATTERY_TAG, "📊 ADC raw avg: %d, calibrated: %dmV (%.3fV) → Battery: %.2fV", 
-                 avg_raw, voltage_sum / num_samples, adc_voltage, battery_voltage);
+        battery_voltage = battery_mv / 1000.0f;
+        ESP_LOGI(BATTERY_TAG, "📊 Battery: %.2fV (%u mV)", battery_voltage, battery_mv);
     }
-skip_adc:
+
     // Calculate battery percentage (0-100%) using Li-Ion discharge curve
     // Li-Ion voltage curve is fairly linear between 3.0V-4.2V
     float percentage = ((battery_voltage - BATTERY_MIN_VOLTAGE) / (BATTERY_MAX_VOLTAGE - BATTERY_MIN_VOLTAGE)) * 100.0f;
@@ -1880,19 +1764,8 @@ skip_adc:
     ESP_LOGI(BATTERY_TAG, "🔋 Li-Ion Battery: %.2fV (%.0f%%) (attributes updated)",
              battery_voltage, percentage);
 
-    /* Power optimization: release ADC peripheral so it can power down during sleep */
-    if (adc_handle != NULL) {
-        adc_oneshot_del_unit(adc_handle);
-        adc_handle = NULL;
-    }
-    if (adc_cali_handle != NULL) {
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-        adc_cali_delete_scheme_curve_fitting(adc_cali_handle);
-#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-        adc_cali_delete_scheme_line_fitting(adc_cali_handle);
-#endif
-        adc_cali_handle = NULL;
-    }
+    /* ADC peripheral is released inside battery_read_voltage() so it can power
+     * down during sleep - no cleanup needed here. */
 }
 
 /* Rain gauge initialization and handlers */
@@ -1933,13 +1806,18 @@ static void rain_gauge_init(void)
         save_rainfall_data(total_rainfall_mm, rain_pulse_count);
     }
     
-    /* Configure GPIO for rain gauge */
+    /* Configure GPIO for rain gauge.
+     * Counting edge left as POSEDGE (unchanged behavior - verify on the bench
+     * that one bucket tip == one count for your DRV5032 polarity).
+     * No internal pull: the DRV5032 actively drives the line (it rests HIGH per
+     * the measured level), so an internal pull-down would only fight the driver
+     * and waste current. */
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_POSEDGE,  // Interrupt on rising edge
+        .intr_type = GPIO_INTR_POSEDGE,
         .pin_bit_mask = (1ULL << RAIN_GAUGE_GPIO),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = 0,   // No pull-up needed
-        .pull_down_en = 1, // Enable internal pull-down for additional noise protection
+        .pull_up_en = 0,
+        .pull_down_en = 0,
     };
     esp_err_t ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
@@ -1949,20 +1827,25 @@ static void rain_gauge_init(void)
     
     ESP_LOGI(RAIN_TAG, "✅ GPIO%d configured successfully", RAIN_GAUGE_GPIO);
 
-    /* Enable GPIO wakeup for light sleep - allows rain pulses to wake device.
-     * Requires CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=n so the digital
-     * GPIO wake domain stays powered in light sleep; otherwise this call blocks. */
-    ret = gpio_wakeup_enable(RAIN_GAUGE_GPIO, GPIO_INTR_HIGH_LEVEL);
+    /* Read the resting level BEFORE arming the wake source. */
+    int initial_level = gpio_get_level(RAIN_GAUGE_GPIO);
+    ESP_LOGI(RAIN_TAG, "🔌 Initial GPIO%d level: %d", RAIN_GAUGE_GPIO, initial_level);
+
+    /* Enable GPIO wakeup for light sleep - allows rain pulses to wake the device.
+     * CRITICAL: light-sleep GPIO wake is LEVEL-triggered. Arming the level the
+     * pin is ALREADY at makes the wake condition immediately true, so the stack
+     * wakes the instant it tries to sleep - a sleep/wake livelock that starves
+     * the IDLE task and trips the task watchdog. Always arm the OPPOSITE of the
+     * current resting level, so a bucket tip (which toggles the line) wakes us. */
+    gpio_int_type_t wake_level = initial_level ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
+    ret = gpio_wakeup_enable(RAIN_GAUGE_GPIO, wake_level);
     if (ret == ESP_OK) {
-        ESP_LOGI(RAIN_TAG, "✅ GPIO%d configured as light sleep wake source", RAIN_GAUGE_GPIO);
+        ESP_LOGI(RAIN_TAG, "✅ GPIO%d armed as light-sleep wake source (wake on %s, resting=%d)",
+                 RAIN_GAUGE_GPIO, wake_level == GPIO_INTR_LOW_LEVEL ? "LOW" : "HIGH", initial_level);
     } else {
         ESP_LOGW(RAIN_TAG, "⚠️ Failed to enable GPIO wake: %s", esp_err_to_name(ret));
     }
 
-    // Check initial GPIO state
-    int initial_level = gpio_get_level(RAIN_GAUGE_GPIO);
-    ESP_LOGI(RAIN_TAG, "🔌 Initial GPIO%d level: %d (with pull-down)", RAIN_GAUGE_GPIO, initial_level);
-    
     /* Create queue for rain events (GPIO pulses + flush requests) */
     rain_gauge_evt_queue = xQueueCreate(32, sizeof(rain_evt_t));
     if (!rain_gauge_evt_queue) {
