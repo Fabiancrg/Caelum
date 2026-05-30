@@ -31,21 +31,21 @@ static const char *TAG = "LPS22HB";
 /* ODR[2:0] = 000 keeps the device in one-shot (power-down) mode */
 
 /* CTRL_REG2 bits */
-#define LPS22HB_CTRL2_ONE_SHOT  0x01    // Trigger a single measurement
+#define LPS22HB_CTRL2_ONE_SHOT   0x01   // Trigger a single measurement
+#define LPS22HB_CTRL2_IF_ADD_INC 0x10   // Auto-increment register address on multi-byte reads (default 1)
 
 /* STATUS bits */
 #define LPS22HB_STATUS_T_DA     0x02    // Temperature data available
 #define LPS22HB_STATUS_P_DA     0x01    // Pressure data available
 
-/* Auto-increment bit for multi-byte reads */
-#define LPS22HB_AUTO_INCREMENT  0x80
-
 static i2c_bus_device_handle_t s_dev = NULL;
 
 static esp_err_t lps22hb_read_reg(uint8_t reg, uint8_t *data, size_t len)
 {
-    /* Set MSB to auto-increment the register pointer on multi-byte reads */
-    if (len > 1) reg |= LPS22HB_AUTO_INCREMENT;
+    /* The LPS22HB auto-increments the register pointer on multi-byte reads by
+     * default (CTRL_REG2.IF_ADD_INC = 1 out of reset). Unlike some other ST/Bosch
+     * parts, it must NOT have the address MSB set for auto-increment - doing so
+     * reads from an undefined register (0x28|0x80 = 0xA8) and returns garbage. */
     return i2c_bus_read_bytes(s_dev, reg, len, data);
 }
 
@@ -86,6 +86,15 @@ esp_err_t lps22hb_init(i2c_bus_handle_t i2c_bus)
         return ESP_ERR_NOT_FOUND;
     }
 
+    /* Explicitly set IF_ADD_INC so multi-byte reads auto-increment, rather than
+     * relying on the power-on default (which a careless CTRL_REG2 write can clear). */
+    ret = lps22hb_write_reg(LPS22HB_REG_CTRL_REG2, LPS22HB_CTRL2_IF_ADD_INC);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "lps22hb_init: CTRL_REG2 write failed");
+        i2c_bus_device_delete(&s_dev);
+        return ESP_ERR_NOT_FOUND;
+    }
+
     ESP_LOGI(TAG, "lps22hb_init: probe OK (one-shot mode)");
     return ESP_OK;
 }
@@ -94,8 +103,12 @@ esp_err_t lps22hb_trigger_measurement(void)
 {
     if (s_dev == NULL) return ESP_ERR_NOT_FOUND;
 
-    /* Start a one-shot conversion */
-    esp_err_t ret = lps22hb_write_reg(LPS22HB_REG_CTRL_REG2, LPS22HB_CTRL2_ONE_SHOT);
+    /* Start a one-shot conversion. MUST keep IF_ADD_INC set in the same write:
+     * a bare ONE_SHOT (0x01) clears IF_ADD_INC, which disables register
+     * auto-increment, so the 3-byte PRESS_OUT read returns the same byte three
+     * times (observed as bytes=A4 A4 A4 -> bogus negative pressure). */
+    esp_err_t ret = lps22hb_write_reg(LPS22HB_REG_CTRL_REG2,
+                                      LPS22HB_CTRL2_IF_ADD_INC | LPS22HB_CTRL2_ONE_SHOT);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "lps22hb_trigger_measurement: ONE_SHOT write failed");
         return ret;
@@ -123,9 +136,12 @@ esp_err_t lps22hb_read_pressure(float *pressure)
     if (!pressure) return ESP_ERR_INVALID_ARG;
     if (s_dev == NULL) return ESP_ERR_NOT_FOUND;
 
-    uint8_t raw[3];
+    uint8_t raw[3] = {0};
     esp_err_t ret = lps22hb_read_reg(LPS22HB_REG_PRESS_OUT_XL, raw, 3);
-    if (ret != ESP_OK) return ret;
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "PRESS read failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     /* 24-bit signed value, LSB first */
     int32_t p_raw = ((uint32_t)raw[2] << 16) | ((uint32_t)raw[1] << 8) | (uint32_t)raw[0];
@@ -133,6 +149,7 @@ esp_err_t lps22hb_read_pressure(float *pressure)
 
     /* LPS22HB: pressure[hPa] = raw / 4096 */
     *pressure = (float)p_raw / 4096.0f;
+    ESP_LOGD(TAG, "pressure: bytes=%02X %02X %02X -> %.2f hPa", raw[0], raw[1], raw[2], *pressure);
     return ESP_OK;
 }
 

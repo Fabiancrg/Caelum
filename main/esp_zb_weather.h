@@ -54,8 +54,8 @@
 #define BATTERY_ENABLE_GPIO             GPIO_NUM_3                           /* P-MOSFET + N-MOSFET enable for battery measurement */
 #define BATTERY_ADC_GPIO                GPIO_NUM_4                           /* ADC input for battery voltage (ADC1_CH4) */
 #define BATTERY_ADC_CHANNEL             ADC_CHANNEL_4                        /* ADC channel */
-#define BATTERY_VOLTAGE_DIVIDER_R1      100000                               /* Top resistor in voltage divider (100kΩ) - update if different in v2.0 */
-#define BATTERY_VOLTAGE_DIVIDER_R2      100000                               /* Bottom resistor in voltage divider (100kΩ) - update if different in v2.0 */
+#define BATTERY_VOLTAGE_DIVIDER_R1      22000                                /* R4: top resistor, BATT+ side (22kΩ) */
+#define BATTERY_VOLTAGE_DIVIDER_R2      30000                                /* R5: bottom resistor, OUT-/GND side (30kΩ) */
 
 /* Deep sleep configuration for battery operation */
 #define SLEEP_DURATION_MINUTES          5                                    /* Wake up every 5 minutes for periodic reading */
