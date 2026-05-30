@@ -45,7 +45,7 @@
 #define I2C_BUS2_SCL_GPIO               GPIO_NUM_2                           /* I2C Bus 2 SCL - AS5600 + VEML7700 */
 
 /* Digital sensors */
-#define RAIN_WAKE_GPIO                  GPIO_NUM_13                          /* Rain sensor (DRV5032DULPG) */
+#define RAIN_GAUGE_GPIO                 GPIO_NUM_13                          /* Rain sensor (DRV5032DULPG) - bucket tip pulse / light-sleep wake */
 #define LPS22HB_INT_GPIO                GPIO_NUM_12                          /* LPS22HB INT_DRDY */
 #define DS18B20_GPIO                    GPIO_NUM_24                          /* DS18B20 1-Wire temperature sensor */
 #define ANEMOMETER_GPIO                 GPIO_NUM_14                          /* Anemometer SS445P hall sensor (pulse counter) */

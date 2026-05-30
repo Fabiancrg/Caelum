@@ -193,8 +193,7 @@ static void debug_led_blink_red(void)
     }
 }
 
-/* Rain gauge configuration */
-#define RAIN_GAUGE_GPIO         13              // GPIO pin for rain sensor (DRV5032DULPG)
+/* Rain gauge configuration (RAIN_GAUGE_GPIO defined in esp_zb_weather.h) */
 #define RAIN_MM_PER_PULSE       0.36f           // mm of rain per bucket tip (adjust for your sensor)
 
 typedef enum {
@@ -249,6 +248,7 @@ static void periodic_sensor_report_callback(void *arg);
 static void start_periodic_reading(void);
 static void stop_periodic_reading(void);
 static void rain_gauge_init(void);
+static void rain_gauge_init_task(void *arg);
 static void rain_gauge_isr_handler(void *arg);
 static void rain_gauge_task(void *arg);
 static void rain_flush_timer_callback(void *arg);
@@ -348,9 +348,16 @@ static esp_err_t deferred_driver_init(void)
     ESP_LOGW(TAG, "Bus 2 probe disabled - skipping AS5600/VEML7700 init");
 #endif
     
-    /* Initialize rain gauge (GPIO13) */
-    ESP_LOGI(TAG, "🌧️  Initializing rain gauge...");
-    rain_gauge_init();
+    /* Initialize rain gauge (GPIO13) in a dedicated task.
+     * rain_gauge_init() does blocking GPIO/light-sleep-wakeup configuration that
+     * must NOT run inline here: deferred_driver_init() executes on the Zigbee_main
+     * task from the BDB signal handler, and blocking it long enough starves the
+     * IDLE task and trips the task watchdog. Run it off the Zigbee_main path. */
+    ESP_LOGI(TAG, "🌧️  Scheduling rain gauge initialization...");
+    BaseType_t rain_init_ret = xTaskCreate(rain_gauge_init_task, "rain_init", 4096, NULL, 4, NULL);
+    if (rain_init_ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create rain gauge init task");
+    }
     
     /* Initialize anemometer (GPIO14) */
     ESP_LOGI(TAG, "💨  Initializing anemometer...");
@@ -1889,6 +1896,15 @@ skip_adc:
 }
 
 /* Rain gauge initialization and handlers */
+/* One-shot task wrapper: runs the blocking rain_gauge_init() off the Zigbee_main
+ * task so its GPIO/light-sleep-wakeup setup cannot starve IDLE and trip the
+ * task watchdog. Deletes itself once initialization is complete. */
+static void rain_gauge_init_task(void *arg)
+{
+    rain_gauge_init();
+    vTaskDelete(NULL);
+}
+
 static void rain_gauge_init(void)
 {
     ESP_LOGI(RAIN_TAG, "Initializing rain gauge on GPIO%d (disabled until network connection)", RAIN_GAUGE_GPIO);
@@ -1932,15 +1948,17 @@ static void rain_gauge_init(void)
     }
     
     ESP_LOGI(RAIN_TAG, "✅ GPIO%d configured successfully", RAIN_GAUGE_GPIO);
-    
-    /* Enable GPIO wakeup for light sleep - allows rain pulses to wake device */
+
+    /* Enable GPIO wakeup for light sleep - allows rain pulses to wake device.
+     * Requires CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=n so the digital
+     * GPIO wake domain stays powered in light sleep; otherwise this call blocks. */
     ret = gpio_wakeup_enable(RAIN_GAUGE_GPIO, GPIO_INTR_HIGH_LEVEL);
     if (ret == ESP_OK) {
         ESP_LOGI(RAIN_TAG, "✅ GPIO%d configured as light sleep wake source", RAIN_GAUGE_GPIO);
     } else {
         ESP_LOGW(RAIN_TAG, "⚠️ Failed to enable GPIO wake: %s", esp_err_to_name(ret));
     }
-    
+
     // Check initial GPIO state
     int initial_level = gpio_get_level(RAIN_GAUGE_GPIO);
     ESP_LOGI(RAIN_TAG, "🔌 Initial GPIO%d level: %d (with pull-down)", RAIN_GAUGE_GPIO, initial_level);

@@ -17,143 +17,151 @@ I (82) boot:  4 ota_1            OTA app          00 11 001b0000 001a0000
 I (89) boot:  5 zb_storage       Unknown data     01 81 00350000 00004000
 I (95) boot:  6 zb_fct           Unknown data     01 81 00354000 00001000
 I (102) boot: End of partition table
-I (105) esp_image: segment 0: paddr=00010020 vaddr=42070020 size=19444h (103492) map
-I (139) esp_image: segment 1: paddr=0002946c vaddr=40800000 size=06bach ( 27564) load
-I (148) esp_image: segment 2: paddr=00030020 vaddr=42000020 size=6f5d4h (456148) map
-I (263) esp_image: segment 3: paddr=0009f5fc vaddr=40806bac size=0e980h ( 59776) load
-I (281) esp_image: segment 4: paddr=000adf84 vaddr=50000000 size=00054h (    84) load
-I (283) esp_image: segment 5: paddr=000adfe0 vaddr=50000058 size=0003ch (    60) load
-I (291) boot: Loaded app from partition at offset 0x10000
-I (292) boot: Disabling RNG early entropy source...
-I (307) cpu_start: Unicore app
-I (315) cpu_start: GPIO 23 and 24 are used as console UART I/O pins
-I (316) cpu_start: Pro cpu start user code
-I (316) cpu_start: cpu freq: 96000000 Hz
-I (318) app_init: Application information:
-I (321) app_init: Project name:     caelum
-I (325) app_init: App version:      89b1321-dirty
-I (330) app_init: Compile time:     May 30 2026 15:10:12
-I (335) app_init: ELF file SHA256:  937e627c6...
-I (339) app_init: ESP-IDF:          v5.5.3-dirty
-I (343) efuse_init: Min chip rev:     v0.0
-I (347) efuse_init: Max chip rev:     v1.99 
-I (351) efuse_init: Chip rev:         v0.1
-I (355) heap_init: Initializing. RAM available for dynamic allocation:
-I (361) heap_init: At 40819C30 len 00033750 (205 KiB): RAM
-I (366) heap_init: At 4084D380 len 00002B60 (10 KiB): RAM
-I (372) heap_init: At 50000094 len 00000F54 (3 KiB): RTCRAM
-I (378) spi_flash: detected chip: gd
-I (380) spi_flash: flash io: qio
-I (384) sleep_gpio: Configure to isolate all GPIO pins in sleep state
-I (389) sleep_gpio: Enable automatic switching of GPIO sleep configuration
-I (415) main_task: Started on CPU0
-I (416) main_task: Calling app_main()
-W (422) rmt: channel resolution loss, real=10666666
-I (423) WEATHER_STATION: Debug RGB LED initialized on GPIO8 (WS2812)
-I (424) ESP_ZB_OTA: Initializing Zigbee OTA
-I (426) ESP_ZB_OTA: Currently running from partition: ota_0 at 0x10000
-I (433) ESP_ZB_OTA: OTA partition found: ota_1 at 0x1b0000 (size: 1703936 bytes)
-I (440) ESP_ZB_OTA: Running stable firmware (not in OTA validation mode)
-I (446) pm: Frequency switching config: CPU_MAX: 96, APB_MAX: 32, APB_MIN: 32, Light sleep: ENABLED
-I (455) WEATHER_STATION: Power management configured: max=96MHz, min=32MHz, light_sleep=enabled
-W (463) sleep: GPIO wakeup source is not available if the peripheral power domain is powered down in sleep
-I (473) WEATHER_STATION: ✅ GPIO wakeup enabled for light sleep
-I (479) SLEEP: 🔄 Wake-up #1
-I (481) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
-I (486) SLEEP: ========================================
-I (491) SLEEP: 📊 WAKE-UP STATISTICS
-I (494) SLEEP: ========================================
-I (499) SLEEP: Boot count: 1
-I (502) SLEEP: Rainfall (RTC): 0.00 mm
-I (505) SLEEP: Pulse count (RTC): 0
-I (508) SLEEP: Duty cycle: ~0.3% (awake ~3s per 15min)
-I (513) SLEEP: Sleep efficiency: ~99.7%
-I (517) SLEEP: ========================================
-I (522) SLEEP: 📂 No stored data, starting from 0.0 mm
-I (527) SLEEP: 🔋 Battery capacity: 2500 mAh
-I (531) SLEEP: 📊 Daily consumption: 2.10 mAh
-I (535) SLEEP: 📅 Estimated battery life: 1190 days (~3.3 years)
-I (541) WEATHER_STATION: 🚀 Starting Caelum Weather Station (Battery Mode)
-I (548) WEATHER_STATION: 📦 Firmware: 89b1321-dirty (Date: May 30 2026 15:10:12)
-I (555) WEATHER_STATION: ⚙️  OTA: Version=0x01080000, Manufacturer=0xFABC, ImageType=0x1200
-I (564) WEATHER_STATION: Wake reason: RESET
-W (568) WEATHER_STATION: 📡 Network: Disconnected (retries: 0/20)
-I (584) phy: phy_version: 323,2, a8ef10c, Aug  1 2025, 17:46:10
-I (585) phy: libbtbb version: 4515421, Aug  1 2025, 17:46:22
-I (586) sleep_clock: Modem Power, Clock and Reset sleep retention initialization
-I (593) WEATHER_STATION: 🔋 Configured as Sleepy End Device (SED) - rx_on_when_idle=false
-I (600) WEATHER_STATION: 📡 Keep-alive poll interval: 7500 ms (7.5 sec)
-I (606) WEATHER_STATION: 💤 Sleep threshold: 6000 ms (6.0 sec) - production optimized
-I (614) WEATHER_STATION: ⏱️  Parent timeout: 64 minutes
-I (619) WEATHER_STATION: ⚡ Power profile: 0.68mA sleep, 12mA transmit, ~0.83mA average
-I (627) SLEEP: 📂 No stored data, starting from 0.0 mm
-I (632) WEATHER_STATION: Using generated version: FW_VERSION=1.8.0, FW_DATE_CODE=20260530
-I (642) WEATHER_STATION: 📦 OTA client cluster added to endpoint 1 (version: 0x01080000, mfr: 0xFABC, type: 0x1200)
-I (655) WEATHER_STATION: 🔍 Verifying REPORTING flag on attributes...
-I (657) WEATHER_STATION:   Temperature: access=0x05 ✅ REPORTING
-I (663) WEATHER_STATION:   Humidity: access=0x05 ✅ REPORTING
-I (668) WEATHER_STATION:   Pressure: access=0x05 ✅ REPORTING
-I (674) WEATHER_STATION:   Rain gauge: access=0x07 ✅ REPORTING
-I (680) WEATHER_STATION:   DS18B20 temp: access=0x05 ✅ REPORTING
-I (685) WEATHER_STATION:   Battery voltage: access=0x05 ✅ REPORTING
-I (692) WEATHER_STATION:   Battery percentage: access=0x05 ✅ REPORTING
-I (698) WEATHER_STATION: [CFG] Setting Zigbee channel mask: 0x07FFF800
-I (707) main_task: Returned from app_main()
-I (708) WEATHER_STATION: � SED automatic sleep mode configured - device will sleep when idle
-I (717) WEATHER_STATION: ⏳ Starting Zigbee stack main loop...
-I (722) WEATHER_STATION: 💤 Light sleep will be triggered automatically when stack is idle
-I (731) WEATHER_STATION: ZDO signal: ZDO Config Ready (0x17), status: ESP_FAIL
-I (737) WEATHER_STATION: Initialize Zigbee stack
-I (742) WEATHER_STATION: RGB LED blink started (network joining)
-I (751) BUILTIN_BUTTON: Builtin button driver initialized successfully on GPIO9
-I (754) WEATHER_STATION: ⚙️  Initializing hardware v2.0 sensors...
-E (761) i2c.master: this port has not been initialized, please initialize it first
-W (768) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
-I (784) i2c_bus: i2c0 bus inited
-I (786) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
-I (791) I2C_CONFIG: I2C Bus 1 initialized (GPIO10/GPIO11) - SHT4x + LPS22HB
-E (798) i2c.master: this port has not been initialized, please initialize it first
-W (806) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
-I (821) i2c_bus: i2c1 bus inited
-I (824) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
-I (829) I2C_CONFIG: I2C Bus 2 initialized (GPIO1/GPIO2) - AS5600 + VEML7700
-I (836) WEATHER_STATION: 🌡️  Initializing Bus 1 sensors (SHT4x + LPS22HB)...
-I (854) i2c_bus: found i2c device address = 0x44
-I (858) i2c_bus: found i2c device address = 0x5d
-I (864) SENSOR_IF: I2C scan: 2 device(s): 0x44 0x5d
-I (864) SENSOR_IF: Probing for SHT4x...
-I (867) SHT41: sht41_init: probe OK
-I (867) SENSOR_IF: SHT4x probe OK
-I (868) SENSOR_IF: Probing for LPS22HB...
-I (872) LPS22HB: lps22hb_init: probe OK (one-shot mode)
-I (876) SENSOR_IF: LPS22HB probe OK
-I (879) SENSOR_IF: Detected sensor combo: SHT4x + LPS22HB
-I (885) WEATHER_STATION: ✅ Detected SHT4x + LPS22HB combo on Bus 1
-I (891) WEATHER_STATION: 🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...
-W (898) WEATHER_STATION: Bus 2 probe disabled - skipping AS5600/VEML7700 init
-I (905) WEATHER_STATION: 🌧️  Initializing rain gauge...
-I (910) RAIN_GAUGE: Initializing rain gauge on GPIO13 (disabled until network connection)
-I (918) RAIN_GAUGE: Current rainfall total: 0.00 mm (0 pulses)
-I (924) SLEEP: 🔄 Wake-up #2
-I (926) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
-I (931) RAIN_GAUGE: ✅ GPIO13 configured successfully
-E (5872) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
-E (5872) task_wdt:  - IDLE (CPU 0)
-E (5872) task_wdt: Tasks currently running:
-E (5872) task_wdt: CPU 0: Zigbee_main
-E (5872) task_wdt: Print CPU 0 (current core) registers
+I (105) esp_image: segment 0: paddr=00010020 vaddr=42070020 size=18074h ( 98420) map
+I (138) esp_image: segment 1: paddr=0002809c vaddr=40800000 size=07f7ch ( 32636) load
+I (148) esp_image: segment 2: paddr=00030020 vaddr=42000020 size=6e828h (452648) map
+I (263) esp_image: segment 3: paddr=0009e850 vaddr=40807f7c size=0abach ( 43948) load
+I (276) esp_image: segment 4: paddr=000a9404 vaddr=40812b30 size=0284ch ( 10316) load
+I (280) esp_image: segment 5: paddr=000abc58 vaddr=50000000 size=00054h (    84) load
+I (282) esp_image: segment 6: paddr=000abcb4 vaddr=50000058 size=0003ch (    60) load
+I (294) boot: Loaded app from partition at offset 0x10000
+I (294) boot: Disabling RNG early entropy source...
+I (309) cpu_start: Unicore app
+I (318) cpu_start: GPIO 23 and 24 are used as console UART I/O pins
+I (318) cpu_start: Pro cpu start user code
+I (319) cpu_start: cpu freq: 96000000 Hz
+I (320) app_init: Application information:
+I (324) app_init: Project name:     caelum
+I (328) app_init: App version:      2b373fd-dirty
+I (332) app_init: Compile time:     May 30 2026 18:03:52
+I (337) app_init: ELF file SHA256:  2693d97df...
+I (341) app_init: ESP-IDF:          v5.5.3-dirty
+I (346) efuse_init: Min chip rev:     v0.0
+I (349) efuse_init: Max chip rev:     v1.99 
+I (353) efuse_init: Chip rev:         v0.1
+I (357) heap_init: Initializing. RAM available for dynamic allocation:
+I (364) heap_init: At 40819A80 len 00033900 (206 KiB): RAM
+I (369) heap_init: At 4084D380 len 00002B60 (10 KiB): RAM
+I (374) heap_init: At 50000094 len 00000F54 (3 KiB): RTCRAM
+I (380) spi_flash: detected chip: gd
+I (383) spi_flash: flash io: qio
+I (386) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (392) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (410) main_task: Started on CPU0
+I (410) main_task: Calling app_main()
+W (417) rmt: channel resolution loss, real=10666666
+I (418) WEATHER_STATION: Debug RGB LED initialized on GPIO8 (WS2812)
+I (418) ESP_ZB_OTA: Initializing Zigbee OTA
+I (421) ESP_ZB_OTA: Currently running from partition: ota_0 at 0x10000
+I (427) ESP_ZB_OTA: OTA partition found: ota_1 at 0x1b0000 (size: 1703936 bytes)
+I (435) ESP_ZB_OTA: Running stable firmware (not in OTA validation mode)
+I (441) pm: Frequency switching config: CPU_MAX: 96, APB_MAX: 32, APB_MIN: 32, Light sleep: ENABLED
+I (450) WEATHER_STATION: Power management configured: max=96MHz, min=32MHz, light_sleep=enabled
+I (458) WEATHER_STATION: ✅ GPIO wakeup enabled for light sleep
+I (464) SLEEP: 🔄 Wake-up #1
+I (466) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
+I (471) SLEEP: ========================================
+I (476) SLEEP: 📊 WAKE-UP STATISTICS
+I (480) SLEEP: ========================================
+I (485) SLEEP: Boot count: 1
+I (487) SLEEP: Rainfall (RTC): 0.00 mm
+I (491) SLEEP: Pulse count (RTC): 0
+I (494) SLEEP: Duty cycle: ~0.3% (awake ~3s per 15min)
+I (499) SLEEP: Sleep efficiency: ~99.7%
+I (502) SLEEP: ========================================
+I (507) SLEEP: 📂 No stored data, starting from 0.0 mm
+I (512) SLEEP: 🔋 Battery capacity: 2500 mAh
+I (516) SLEEP: 📊 Daily consumption: 2.10 mAh
+I (521) SLEEP: 📅 Estimated battery life: 1190 days (~3.3 years)
+I (527) WEATHER_STATION: 🚀 Starting Caelum Weather Station (Battery Mode)
+I (534) WEATHER_STATION: 📦 Firmware: 2b373fd-dirty (Date: May 30 2026 18:03:52)
+I (541) WEATHER_STATION: ⚙️  OTA: Version=0x01080000, Manufacturer=0xFABC, ImageType=0x1200
+I (549) WEATHER_STATION: Wake reason: RESET
+W (553) WEATHER_STATION: 📡 Network: Disconnected (retries: 0/20)
+I (575) phy: phy_version: 323,2, a8ef10c, Aug  1 2025, 17:46:10
+I (576) phy: libbtbb version: 4515421, Aug  1 2025, 17:46:22
+I (576) sleep_clock: Modem Power, Clock and Reset sleep retention initialization
+I (584) WEATHER_STATION: 🔋 Configured as Sleepy End Device (SED) - rx_on_when_idle=false
+I (590) WEATHER_STATION: 📡 Keep-alive poll interval: 7500 ms (7.5 sec)
+I (597) WEATHER_STATION: 💤 Sleep threshold: 6000 ms (6.0 sec) - production optimized
+I (605) WEATHER_STATION: ⏱️  Parent timeout: 64 minutes
+I (610) WEATHER_STATION: ⚡ Power profile: 0.68mA sleep, 12mA transmit, ~0.83mA average
+I (618) SLEEP: 📂 No stored data, starting from 0.0 mm
+I (623) WEATHER_STATION: Using generated version: FW_VERSION=1.8.0, FW_DATE_CODE=20260530
+I (632) WEATHER_STATION: 📦 OTA client cluster added to endpoint 1 (version: 0x01080000, mfr: 0xFABC, type: 0x1200)
+I (645) WEATHER_STATION: 🔍 Verifying REPORTING flag on attributes...
+I (647) WEATHER_STATION:   Temperature: access=0x05 ✅ REPORTING
+I (653) WEATHER_STATION:   Humidity: access=0x05 ✅ REPORTING
+I (659) WEATHER_STATION:   Pressure: access=0x05 ✅ REPORTING
+I (664) WEATHER_STATION:   Rain gauge: access=0x07 ✅ REPORTING
+I (670) WEATHER_STATION:   DS18B20 temp: access=0x05 ✅ REPORTING
+I (676) WEATHER_STATION:   Battery voltage: access=0x05 ✅ REPORTING
+I (682) WEATHER_STATION:   Battery percentage: access=0x05 ✅ REPORTING
+I (688) WEATHER_STATION: [CFG] Setting Zigbee channel mask: 0x07FFF800
+I (695) main_task: Returned from app_main()
+I (748) WEATHER_STATION: � SED automatic sleep mode configured - device will sleep when idle
+I (749) WEATHER_STATION: ⏳ Starting Zigbee stack main loop...
+I (751) WEATHER_STATION: 💤 Light sleep will be triggered automatically when stack is idle
+I (760) WEATHER_STATION: ZDO signal: ZDO Config Ready (0x17), status: ESP_FAIL
+I (767) WEATHER_STATION: Initialize Zigbee stack
+I (771) WEATHER_STATION: RGB LED blink started (network joining)
+I (779) BUILTIN_BUTTON: Builtin button driver initialized successfully on GPIO9
+I (784) WEATHER_STATION: ⚙️  Initializing hardware v2.0 sensors...
+E (790) i2c.master: this port has not been initialized, please initialize it first
+W (797) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
+I (813) i2c_bus: i2c0 bus inited
+I (815) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
+I (820) I2C_CONFIG: I2C Bus 1 initialized (GPIO10/GPIO11) - SHT4x + LPS22HB
+E (827) i2c.master: this port has not been initialized, please initialize it first
+W (835) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
+I (850) i2c_bus: i2c1 bus inited
+I (853) i2c_bus: I2C Bus V2 Config Succeed, Version: 1.5.0
+I (858) I2C_CONFIG: I2C Bus 2 initialized (GPIO1/GPIO2) - AS5600 + VEML7700
+I (865) WEATHER_STATION: 🌡️  Initializing Bus 1 sensors (SHT4x + LPS22HB)...
+I (883) i2c_bus: found i2c device address = 0x44
+I (887) i2c_bus: found i2c device address = 0x5d
+I (893) SENSOR_IF: I2C scan: 2 device(s): 0x44 0x5d
+I (893) SENSOR_IF: Probing for SHT4x...
+I (896) SHT41: sht41_init: probe OK
+I (896) SENSOR_IF: SHT4x probe OK
+I (897) SENSOR_IF: Probing for LPS22HB...
+I (901) LPS22HB: lps22hb_init: probe OK (one-shot mode)
+I (905) SENSOR_IF: LPS22HB probe OK
+I (909) SENSOR_IF: Detected sensor combo: SHT4x + LPS22HB
+I (914) WEATHER_STATION: ✅ Detected SHT4x + LPS22HB combo on Bus 1
+I (920) WEATHER_STATION: 🧭  Initializing Bus 2 sensors (AS5600 + VEML7700)...
+W (927) WEATHER_STATION: Bus 2 probe disabled - skipping AS5600/VEML7700 init
+I (934) WEATHER_STATION: 🌧️  Scheduling rain gauge initialization...
+I (940) WEATHER_STATION: 💨  Initializing anemometer...
+E (946) gpio: gpio_install_isr_service(530): GPIO isr service already installed
+I (953) ANEMOMETER: Anemometer initialized on GPIO14
+I (957) WEATHER_STATION: ✅ Anemometer initialized
+I (962) WEATHER_STATION: 🌡️  Initializing DS18B20...
+I (967) DS18B20: Initializing DS18B20 on GPIO24...
+I (972) DS18B20: ✅ DS18B20 detected on GPIO24 (first attempt)
+I (977) DS18B20: Performing initial temperature reading...
+I (984) RAIN_GAUGE: Initializing rain gauge on GPIO13 (disabled until network connection)
+I (990) RAIN_GAUGE: Current rainfall total: 0.00 mm (0 pulses)
+I (996) SLEEP: 🔄 Wake-up #2
+I (998) SLEEP: 🔌 Wake-up reason: POWER ON / RESET
+I (1003) RAIN_GAUGE: ✅ GPIO13 configured successfully
+E (5901) task_wdt: Task watchdog got triggered. The following tasks/users did not reset the watchdog in time:
+E (5901) task_wdt:  - IDLE (CPU 0)
+E (5901) task_wdt: Tasks currently running:
+E (5901) task_wdt: CPU 0: Zigbee_main
+E (5901) task_wdt: Print CPU 0 (current core) registers
 Core  0 register dump:
-MEPC    : 0x4080b48a  RA      : 0x4080b51c  SP      : 0x4084f790  GP      : 0x40813474  
---- 0x4080b48a: vPortClearInterruptMaskFromISR at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:514
---- 0x4080b51c: vPortExitCritical at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:627
-TP      : 0x4084fa70  T0      : 0x4001117a  T1      : 0x10000000  T2      : 0x00003000  
+MEPC    : 0x4080b40c  RA      : 0x4080b408  SP      : 0x4084f630  GP      : 0x40813334  
+--- 0x4080b40c: vPortYield at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:649
+--- 0x4080b408: vPortYield at /home/fabian/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c:649
+TP      : 0x4084f930  T0      : 0x4001117a  T1      : 0x90000000  T2      : 0x00003000  
 --- 0x4001117a: __retarget_lock_release_recursive in ROM
-S0/FP   : 0x0000000d  S1      : 0x00000280  A0      : 0x00000001  A1      : 0x00000005  
-A2      : 0x40812e78  A3      : 0x600910a4  A4      : 0x00000000  A5      : 0x20001000  
+S0/FP   : 0x00000352  S1      : 0x00000000  A0      : 0x00000001  A1      : 0x00000001  
+A2      : 0x00000000  A3      : 0x00000004  A4      : 0x00000001  A5      : 0x40819000  
 A6      : 0x00000001  A7      : 0x0000000a  S2      : 0x00000003  S3      : 0x7fffffff  
-S4      : 0x0005674e  S5      : 0x00000000  S6      : 0x000186a0  S7      : 0xfffffffe  
-S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000038  S11     : 0x00000000  
-T3      : 0x00000000  T4      : 0x00000000  T5      : 0x00000000  T6      : 0x00000000  
+S4      : 0x0005cf55  S5      : 0x00000000  S6      : 0x000186a0  S7      : 0xfffffffe  
+S8      : 0x00000000  S9      : 0x00000000  S10     : 0x00000033  S11     : 0x00000000  
+T3      : 0x00000000  T4      : 0x00000900  T5      : 0x00000000  T6      : 0x00000000  
 MSTATUS : 0x00001889  MTVEC   : 0x40800001  MCAUSE  : 0xdeadc0de  MTVAL   : 0xdeadc0de  
 --- 0x40800001: _vector_table at /home/fabian/esp/v5.5.3/esp-idf/components/riscv/vectors_intc.S:54
 MHARTID : 0x00000000  

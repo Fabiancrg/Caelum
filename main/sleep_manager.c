@@ -53,7 +53,7 @@ wake_reason_t check_wake_reason(void)
             
         case ESP_SLEEP_WAKEUP_EXT0:
         case ESP_SLEEP_WAKEUP_EXT1:
-            ESP_LOGI(SLEEP_TAG, "🌧️ Wake-up reason: RAIN DETECTED on GPIO%d", RAIN_WAKE_GPIO);
+            ESP_LOGI(SLEEP_TAG, "🌧️ Wake-up reason: RAIN DETECTED on GPIO%d", RAIN_GAUGE_GPIO);
             return WAKE_REASON_RAIN;
             
         case ESP_SLEEP_WAKEUP_GPIO:

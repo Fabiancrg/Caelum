@@ -42,7 +42,10 @@ CONFIG_ZB_ZED=y
 #
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
-CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y
+# Keep the peripheral power domain alive in light sleep so the digital GPIO
+# wake path stays available - required for rain-gauge wake on RAIN_GAUGE_GPIO.
+# (With this =y, gpio_wakeup_enable() blocks/fails; see boot warning.)
+CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=n
 CONFIG_IEEE802154_SLEEP_ENABLE=y
 # Use 1000Hz freertos tick to lower sleep time threshold
 CONFIG_FREERTOS_HZ=1000
