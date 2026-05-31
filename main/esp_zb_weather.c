@@ -1489,10 +1489,6 @@ static void IRAM_ATTR rain_gauge_isr_handler(void *arg)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    // ISR-safe: just increment a counter for debugging (can view in logs after interrupt)
-    static uint32_t isr_trigger_count = 0;
-    isr_trigger_count++;
-
     /* Prepare event with ISR tick for accurate timing */
     rain_evt_t evt = {
         .type = RAIN_EVENT_PULSE,
@@ -1500,13 +1496,10 @@ static void IRAM_ATTR rain_gauge_isr_handler(void *arg)
         .force_nvs = false,
         .force_attribute = false,
     };
-    
-    /* Only queue event if there's space - prevents overflow from rapid pulses */
-    if (xQueueSendFromISR(rain_gauge_evt_queue, &evt, &xHigherPriorityTaskWoken) != pdPASS) {
-        /* Queue full - pulse will be lost but prevents crash */
-        static uint32_t queue_overflow_count = 0;
-        queue_overflow_count++;
-    }
+
+    /* Only queue event if there's space - prevents overflow from rapid pulses.
+     * If the queue is full the pulse is dropped, but this prevents a crash. */
+    xQueueSendFromISR(rain_gauge_evt_queue, &evt, &xHigherPriorityTaskWoken);
     
     if (xHigherPriorityTaskWoken) {
         portYIELD_FROM_ISR();
@@ -1631,6 +1624,13 @@ static void rain_gauge_flush_totals(bool save_to_nvs, bool update_attribute)
             return;
         }
 
+        /* CRITICAL: this runs in rain_gauge_task, NOT the Zigbee task. Unlike the
+         * other *_read_and_report() functions (dispatched via esp_zb_scheduler_alarm
+         * and therefore already on the Zigbee thread), we must take the stack lock
+         * before calling any esp_zb_* API. Calling it unlocked races with the
+         * Zigbee main loop's critical sections and corrupts port_uxCriticalNesting,
+         * which trips "assert failed: vPortExitCritical (port_uxCriticalNesting[0] > 0)". */
+        esp_zb_lock_acquire(portMAX_DELAY);
         esp_err_t ret = esp_zb_zcl_set_attribute_val(
             HA_ESP_RAIN_GAUGE_ENDPOINT,
             ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
@@ -1638,6 +1638,7 @@ static void rain_gauge_flush_totals(bool save_to_nvs, bool update_attribute)
             ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID,
             &rounded_rainfall,
             false);
+        esp_zb_lock_release();
 
         if (ret == ESP_OK) {
             ESP_LOGI(RAIN_TAG, "📡 Rain gauge attribute updated: %.2f mm (%u pulses)", rounded_rainfall, rain_pulse_count);
@@ -1918,16 +1919,20 @@ static void rain_gauge_init(void)
     }
     
     /* Configure GPIO for rain gauge.
-     * Counting edge left as POSEDGE (unchanged behavior - verify on the bench
-     * that one bucket tip == one count for your DRV5032 polarity).
-     * No internal pull: the DRV5032 actively drives the line (it rests HIGH per
-     * the measured level), so an internal pull-down would only fight the driver
-     * and waste current. */
+     * The DRV5032 has an OPEN-DRAIN, active-LOW output: it pulls the line to GND
+     * when a magnet is present and is high-impedance otherwise. It therefore
+     * REQUIRES a pull-up to read HIGH at rest. Enable the internal pull-up so the
+     * line is defined even if the board's external pull-up is missing/weak/wrong-
+     * footprint (a floating line was a prime suspect for "rain gauge not working").
+     * The internal pull-up is harmless if an external one is also present.
+     * Counting edge left as POSEDGE: with a pull-up the line rests HIGH and a
+     * bucket tip pulls it LOW briefly, so the rising edge (magnet leaving) is one
+     * count per tip. Verify one tip == one count on the bench via the monitor log. */
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_POSEDGE,
         .pin_bit_mask = (1ULL << RAIN_GAUGE_GPIO),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = 0,
+        .pull_up_en = 1,
         .pull_down_en = 0,
     };
     esp_err_t ret = gpio_config(&io_conf);
@@ -2013,10 +2018,9 @@ static void rain_gauge_init(void)
         ESP_LOGE(RAIN_TAG, "Failed to create rain gauge task");
         return;
     }
-    
-    /* Add continuous GPIO monitoring for debugging */
+
     ESP_LOGI(RAIN_TAG, "Rain gauge initialized successfully. Current total: %.2f mm", total_rainfall_mm);
-    ESP_LOGI(RAIN_TAG, "🔧 GPIO%d monitoring: level=%d, pull-down=enabled, trigger=RISING_EDGE", 
+    ESP_LOGI(RAIN_TAG, "🔧 GPIO%d configured: level=%d, pull-up=enabled, trigger=POSEDGE",
              RAIN_GAUGE_GPIO, gpio_get_level(RAIN_GAUGE_GPIO));
     
     /* Initial rain value will be reported after network join (see signal handler) */
