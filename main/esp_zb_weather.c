@@ -18,6 +18,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "ha/esp_zigbee_ha_standard.h"
+#include "aps/esp_zigbee_aps.h"
 #include "esp_zb_weather.h"
 #include "esp_zb_ota.h"
 #include "sleep_manager.h"
@@ -232,8 +233,25 @@ static esp_timer_handle_t periodic_report_timer = NULL;
 
 /* Network connection status (zigbee_network_connected declared earlier for LED functions) */
 static uint32_t connection_retry_count = 0;
-#define NETWORK_RETRY_SLEEP_DURATION    30      // 30 seconds for network retry
-#define MAX_CONNECTION_RETRIES          20      // Max retries before giving up (10 minutes total)
+#define MAX_CONNECTION_RETRIES          20      // Fast (1 s) retries before backing off to the slow rejoin watchdog
+
+/* Rejoin watchdog: an always-on periodic timer that (a) keeps re-attempting
+ * network steering when we're disconnected instead of giving up forever, and
+ * (b) detects runtime parent loss (stack reports not-joined while we think we
+ * are connected) and triggers a rejoin. */
+#define REJOIN_WATCHDOG_INTERVAL_MS     (5 * 60 * 1000ULL)   // attempt rejoin / check link every 5 minutes
+static esp_timer_handle_t rejoin_watchdog_timer = NULL;
+
+/* Delivery heartbeat: the APS data-confirm callback reports the TX status of
+ * every outgoing APS frame. Repeated delivery failures mean our parent/route is
+ * gone even though the stack may still consider us "joined" - a silent parent
+ * loss that esp_zb_bdb_dev_joined() won't catch. We react to consecutive failed
+ * confirms rather than to a silence-timeout, so quiet periods never false-trip
+ * (no transmissions => no failures), while a dead link is caught within a few
+ * reports (sensor changes + the hourly max-interval reports act as probes). */
+#define HEARTBEAT_FAIL_THRESHOLD        3       // consecutive failed APS confirms => link considered dead
+static uint32_t aps_tx_fail_streak = 0;         // consecutive APS delivery failures (Zigbee-task only)
+static int64_t  last_aps_tx_ok_us = 0;          // timestamp of last confirmed delivery (diagnostics)
 
 /* Button action tracking (no state needed for action-based buttons) */
 #define BUS2_PROBE_ENABLED 1
@@ -252,6 +270,9 @@ static void light_read_and_report(uint8_t param);
 static void periodic_sensor_report_callback(void *arg);
 static void start_periodic_reading(void);
 static void stop_periodic_reading(void);
+static void start_rejoin_watchdog(void);
+static void rejoin_watchdog_cb(void *arg);
+static void aps_data_confirm_cb(esp_zb_apsde_data_confirm_t confirm);
 static void rain_gauge_init(void);
 static void rain_gauge_init_task(void *arg);
 static void rain_gauge_isr_handler(void *arg);
@@ -260,7 +281,6 @@ static void rain_flush_timer_callback(void *arg);
 static void rain_gauge_request_flush(bool force_nvs, bool force_attribute);
 static void rain_gauge_flush_totals(bool save_to_nvs, bool update_attribute);
 static void rain_gauge_enable_isr(void);
-static void rain_gauge_disable_isr(void);
 static void ds18b20_init(void);
 static void ds18b20_read_and_report(uint8_t param);
 static void battery_read_and_report(uint8_t param);
@@ -575,7 +595,12 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         debug_led_stop_blink();
         /* LED is already deinitialized after initial join, no action needed */
         zigbee_network_connected = false;
-        rain_gauge_disable_isr();
+        /* Keep the rain ISR running so tips are still counted/persisted while
+         * off-network; reporting is deferred until we rejoin (gated by
+         * zigbee_network_connected). The rejoin watchdog will keep attempting
+         * to get us back onto the network. */
+        stop_periodic_reading();
+        ESP_LOGW(RAIN_TAG, "Left network - rain still counted offline, reporting deferred until rejoin");
         break;
     case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
     case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
@@ -622,7 +647,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             /* Mark network as connected and reset retry count */
             zigbee_network_connected = true;
             connection_retry_count = 0;
-            
+            /* Fresh link: clear any stale delivery-heartbeat failure state. */
+            aps_tx_fail_streak = 0;
+            last_aps_tx_ok_us = esp_timer_get_time();
+
             /* Record join time to prevent sleep during initial configuration */
             network_join_time_us = esp_timer_get_time();
             ESP_LOGI(TAG, "🕐 Network join time recorded - sleep disabled for %d seconds to allow reporting configuration", INITIAL_CONFIG_DELAY_SEC);
@@ -667,27 +695,28 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             /* Mark network as disconnected and increment retry count */
             zigbee_network_connected = false;
             connection_retry_count++;
-            
-            /* Disable rain gauge when not connected */
-            rain_gauge_disable_isr();
-            ESP_LOGW(RAIN_TAG, "Rain gauge disabled - not connected to network");
-            
-            /* v2.0: No separate pulse counter */
-            
+
+            /* Keep the rain ISR running: tips are still counted and persisted to
+             * NVS while off-network, and reported once we rejoin. */
+            ESP_LOGW(RAIN_TAG, "Not connected - rain still counted offline, reporting deferred until rejoin");
+
             /* Stop periodic sensor reading timer when disconnected */
             stop_periodic_reading();
-            
-            /* Check if max retries reached */
+
+            /* Fast retries exhausted: stop the aggressive 1 s loop and let the
+             * always-on rejoin watchdog keep trying at a slow cadence. We do NOT
+             * give up - the device keeps attempting to rejoin indefinitely. */
             if (connection_retry_count >= MAX_CONNECTION_RETRIES) {
-                ESP_LOGE(TAG, "❌ Max connection retries (%d) reached - giving up", MAX_CONNECTION_RETRIES);
-                debug_led_stop_blink();
-                debug_led_blink_red();  // Blink red to indicate failure
-                /* LED will be deinitialized after red blink sequence completes */
-                esp_zb_scheduler_alarm((esp_zb_callback_t)debug_led_deinit, 0, 5000);
-                /* Device will continue to operate but won't retry network join */
+                if (connection_retry_count == MAX_CONNECTION_RETRIES) {
+                    ESP_LOGW(TAG, "⚠️ Fast retries (%d) exhausted - backing off to slow rejoin watchdog (every %llu min)",
+                             MAX_CONNECTION_RETRIES, REJOIN_WATCHDOG_INTERVAL_MS / 60000ULL);
+                    debug_led_stop_blink();
+                    debug_led_blink_red();  // Blink red once to indicate prolonged disconnect
+                    esp_zb_scheduler_alarm((esp_zb_callback_t)debug_led_deinit, 0, 5000);
+                }
                 break;
             }
-            
+
             ESP_LOGW(TAG, "🔄 Connection attempt %d/%d failed - retrying", connection_retry_count, MAX_CONNECTION_RETRIES);
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
         }
@@ -1277,7 +1306,15 @@ static void esp_zb_task(void *pvParameters)
     ESP_LOGI(TAG, "[CFG] Setting Zigbee channel mask: 0x%08lX", (unsigned long)ESP_ZB_PRIMARY_CHANNEL_MASK);
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
     ESP_ERROR_CHECK(esp_zb_start(false));
-    
+
+    /* Start the always-on rejoin watchdog so the device keeps trying to (re)join
+     * forever and recovers from runtime parent loss (see rejoin_watchdog_cb). */
+    start_rejoin_watchdog();
+
+    /* Register the delivery heartbeat: per-frame APS TX confirmations let us
+     * detect a silent parent/route loss and force a rejoin (see aps_data_confirm_cb). */
+    esp_zb_aps_data_confirm_handler_register(aps_data_confirm_cb);
+
     /* In SED mode with automatic sleep, we don't manually schedule sleep operations.
      * The initial sensor report will be triggered after network join via the signal handler.
      * The device will automatically enter light sleep when idle (no Zigbee activity). */
@@ -1484,6 +1521,93 @@ static void stop_periodic_reading(void)
     }
 }
 
+/* Rejoin watchdog callback.
+ * Runs in the esp_timer task (NOT the Zigbee task), so every esp_zb_* call here
+ * MUST hold the stack lock - same rule as the rain flush. Fires periodically and:
+ *   - detects runtime parent loss (stack says not-joined while we think we are
+ *     connected) and corrects our state, and
+ *   - re-attempts network steering whenever we are disconnected, so the device
+ *     keeps trying to rejoin forever instead of giving up. */
+static void rejoin_watchdog_cb(void *arg)
+{
+    bool joined;
+    esp_zb_lock_acquire(portMAX_DELAY);
+    joined = esp_zb_bdb_dev_joined();
+    esp_zb_lock_release();
+
+    /* Runtime parent loss: flagged connected but the stack is no longer joined. */
+    if (zigbee_network_connected && !joined) {
+        ESP_LOGW(TAG, "🛡️ Watchdog: stack reports NOT joined while flagged connected - parent likely lost, rejoining");
+        zigbee_network_connected = false;
+    }
+
+    if (zigbee_network_connected) {
+        int64_t age_s = (esp_timer_get_time() - last_aps_tx_ok_us) / 1000000LL;
+        ESP_LOGD(TAG, "🛡️ Watchdog: link healthy (last confirmed TX %lld s ago, fail streak %lu)",
+                 (long long)age_s, (unsigned long)aps_tx_fail_streak);
+        return;  // link healthy, nothing to do
+    }
+
+    ESP_LOGW(TAG, "🛡️ Rejoin watchdog: disconnected - attempting network steering");
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb,
+                           ESP_ZB_BDB_MODE_NETWORK_STEERING, 0);
+    esp_zb_lock_release();
+}
+
+/* Start the always-on rejoin watchdog (idempotent). */
+static void start_rejoin_watchdog(void)
+{
+    if (rejoin_watchdog_timer != NULL) {
+        return;  // already running
+    }
+
+    const esp_timer_create_args_t args = {
+        .callback = &rejoin_watchdog_cb,
+        .name = "rejoin_wd"
+    };
+    if (esp_timer_create(&args, &rejoin_watchdog_timer) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create rejoin watchdog timer");
+        return;
+    }
+    if (esp_timer_start_periodic(rejoin_watchdog_timer, REJOIN_WATCHDOG_INTERVAL_MS * 1000ULL) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start rejoin watchdog timer");
+        esp_timer_delete(rejoin_watchdog_timer);
+        rejoin_watchdog_timer = NULL;
+        return;
+    }
+    ESP_LOGI(TAG, "🛡️ Rejoin watchdog started (every %llu min)", REJOIN_WATCHDOG_INTERVAL_MS / 60000ULL);
+}
+
+/* APS data-confirm callback: the delivery heartbeat.
+ * Invoked by the stack (Zigbee task context) for every outgoing APS frame, so
+ * esp_zb_* calls here are safe without the lock. A run of failed confirms means
+ * the link is dead even if the stack still thinks we're joined - force a rejoin. */
+static void aps_data_confirm_cb(esp_zb_apsde_data_confirm_t confirm)
+{
+    if (confirm.status == 0) {
+        /* Delivered: link is alive. */
+        aps_tx_fail_streak = 0;
+        last_aps_tx_ok_us = esp_timer_get_time();
+        return;
+    }
+
+    /* Delivery failed (no ACK / no route to parent or coordinator). */
+    aps_tx_fail_streak++;
+    ESP_LOGW(TAG, "📨 APS delivery failed (status=0x%02x, streak=%lu/%d)",
+             confirm.status, (unsigned long)aps_tx_fail_streak, HEARTBEAT_FAIL_THRESHOLD);
+
+    if (zigbee_network_connected && aps_tx_fail_streak >= HEARTBEAT_FAIL_THRESHOLD) {
+        ESP_LOGW(TAG, "💔 Delivery heartbeat: %lu consecutive failures - parent/route lost, forcing rejoin",
+                 (unsigned long)aps_tx_fail_streak);
+        zigbee_network_connected = false;
+        aps_tx_fail_streak = 0;
+        /* Zigbee task context: schedule steering directly (no lock needed). */
+        esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb,
+                               ESP_ZB_BDB_MODE_NETWORK_STEERING, 0);
+    }
+}
+
 /* Rain gauge implementation */
 static void IRAM_ATTR rain_gauge_isr_handler(void *arg)
 {
@@ -1675,25 +1799,6 @@ static void rain_gauge_enable_isr(void)
     // Test GPIO level at enable time
     int current_level = gpio_get_level(RAIN_GAUGE_GPIO);
     ESP_LOGI(RAIN_TAG, "🔌 Current GPIO%d level at enable: %d", RAIN_GAUGE_GPIO, current_level);
-}
-
-static void rain_gauge_disable_isr(void)
-{
-    if (rain_gauge_isr_installed) {
-        /* Do not remove the ISR handler here; removing the handler causes a
-         * gap where pulses cannot be queued. Instead, disable the GPIO
-         * interrupt line so the handler remains installed and can capture
-         * events when re-enabled. */
-        gpio_intr_disable(RAIN_GAUGE_GPIO);
-        rain_gauge_enabled = false;
-        ESP_LOGI(RAIN_TAG, "Rain gauge interrupts disabled (handler kept)");
-    } else {
-        rain_gauge_enabled = false;
-        ESP_LOGI(RAIN_TAG, "Rain gauge ISR already disabled");
-    }
-
-    /* Persist any accumulated rainfall before going idle */
-    rain_gauge_request_flush(true, false);
 }
 
 /* Battery monitoring functions.

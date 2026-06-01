@@ -17,7 +17,7 @@ extern "C" {
  * 
  * Configures:
  * - GPIO3 as output for MOSFET control (enable measurement)
- * - GPIO4 (ADC1_CH4) for voltage reading
+ * - GPIO4 (ADC1_CH3) for voltage reading
  * - ADC calibration for accurate readings
  * 
  * @return ESP_OK on success, ESP_FAIL otherwise

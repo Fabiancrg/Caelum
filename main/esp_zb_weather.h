@@ -52,8 +52,8 @@
 
 /* Battery monitoring - Hardware v2.0 */
 #define BATTERY_ENABLE_GPIO             GPIO_NUM_3                           /* P-MOSFET + N-MOSFET enable for battery measurement */
-#define BATTERY_ADC_GPIO                GPIO_NUM_4                           /* ADC input for battery voltage (ADC1_CH4) */
-#define BATTERY_ADC_CHANNEL             ADC_CHANNEL_4                        /* ADC channel */
+#define BATTERY_ADC_GPIO                GPIO_NUM_4                           /* ADC input for battery voltage. On ESP32-H2, GPIO4 = ADC1_CHANNEL_3 */
+#define BATTERY_ADC_CHANNEL             ADC_CHANNEL_3                        /* ADC1_CH3 == GPIO4 (NOT CH4, which is GPIO5) */
 #define BATTERY_VOLTAGE_DIVIDER_R1      22000                                /* R4: top resistor, BATT+ side (22kΩ) */
 #define BATTERY_VOLTAGE_DIVIDER_R2      30000                                /* R5: bottom resistor, OUT-/GND side (30kΩ) */
 
