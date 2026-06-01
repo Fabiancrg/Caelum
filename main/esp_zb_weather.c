@@ -1934,16 +1934,16 @@ static void battery_read_and_report(uint8_t param)
         ESP_LOGI(BATTERY_TAG, "📊 Battery: %.2fV (%u mV)", battery_voltage, battery_mv);
     }
 
-    // Calculate battery percentage (0-100%) using Li-Ion discharge curve
-    // Li-Ion voltage curve is fairly linear between 3.0V-4.2V
-    float percentage = ((battery_voltage - BATTERY_MIN_VOLTAGE) / (BATTERY_MAX_VOLTAGE - BATTERY_MIN_VOLTAGE)) * 100.0f;
-    if (percentage > 100.0f) percentage = 100.0f;
-    if (percentage < 0.0f) percentage = 0.0f;
+    // Calculate battery percentage from the shared Li-Ion discharge curve
+    // (battery_voltage_to_percentage in battery_monitor.c) so the reported value
+    // matches the driver's model and reflects the real non-linear discharge.
+    uint8_t pct = battery_voltage_to_percentage((uint16_t)(battery_voltage * 1000.0f));
+    float percentage = (float)pct;  // kept as float for NVS persistence below
     // Zigbee uses different units:
     // - Battery voltage: 0.1V units (e.g., 30 = 3.0V)
     // - Battery percentage: 0-200 scale (200 = 100%, 100 = 50%)
     uint8_t zigbee_voltage = (uint8_t)(battery_voltage * 10.0f);
-    uint8_t zigbee_percentage = (uint8_t)(percentage * 2.0f);
+    uint8_t zigbee_percentage = (uint8_t)(pct * 2);
     // Store last measured values in NVS
     err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
     if (err == ESP_OK) {

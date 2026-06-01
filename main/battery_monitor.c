@@ -184,14 +184,34 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
 
 uint8_t battery_voltage_to_percentage(uint16_t voltage_mv)
 {
-    /* Li-Ion discharge curve: 2700mV = 0%, 4200mV = 100% */
-    const uint16_t v_min = 2700;
-    const uint16_t v_max = 4200;
+    /* Piecewise-linear Li-Ion (LiCoO2/LiPo) discharge curve mapping resting cell
+     * voltage to state-of-charge. Far more faithful than a straight line: the cell
+     * spends most of its life on a flat ~3.7-3.9 V plateau and then drops quickly
+     * at both ends. Table is descending by voltage; we linearly interpolate
+     * between adjacent breakpoints. (A straight 2.7-4.2 V line badly over-reads in
+     * the mid-range and hides the end-of-life cliff.) */
+    static const struct { uint16_t mv; uint8_t pct; } curve[] = {
+        {4200, 100}, {4150, 95}, {4110, 90}, {4080, 85}, {4020, 80},
+        {3980,  75}, {3950, 70}, {3910, 65}, {3870, 60}, {3850, 55},
+        {3840,  50}, {3820, 45}, {3800, 40}, {3790, 35}, {3770, 30},
+        {3750,  25}, {3730, 20}, {3710, 15}, {3690, 10}, {3610,  5},
+        {3270,   0},
+    };
+    const int n = sizeof(curve) / sizeof(curve[0]);
 
-    if (voltage_mv <= v_min) return 0;
-    if (voltage_mv >= v_max) return 100;
+    if (voltage_mv >= curve[0].mv)     return curve[0].pct;       /* >= 4.20 V -> 100% */
+    if (voltage_mv <= curve[n - 1].mv) return curve[n - 1].pct;   /* <= 3.27 V -> 0%   */
 
-    return (uint8_t)(((voltage_mv - v_min) * 100) / (v_max - v_min));
+    for (int i = 0; i < n - 1; i++) {
+        uint16_t v_hi = curve[i].mv;
+        uint16_t v_lo = curve[i + 1].mv;
+        if (voltage_mv <= v_hi && voltage_mv > v_lo) {
+            uint8_t p_hi = curve[i].pct;
+            uint8_t p_lo = curve[i + 1].pct;
+            return (uint8_t)(p_lo + ((uint32_t)(voltage_mv - v_lo) * (p_hi - p_lo)) / (v_hi - v_lo));
+        }
+    }
+    return 0; /* unreachable */
 }
 
 uint8_t battery_get_zigbee_voltage(void)
