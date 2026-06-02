@@ -1981,8 +1981,9 @@ static void battery_read_and_report(uint8_t param)
     ESP_LOGI(BATTERY_TAG, "🔋 Li-Ion Battery: %.2fV (%.0f%%) (attributes updated)",
              battery_voltage, percentage);
 
-    /* ADC peripheral is released inside battery_read_voltage() so it can power
-     * down during sleep - no cleanup needed here. */
+    /* The ADC unit + calibration are kept initialized for the device lifetime
+     * (battery_monitor.c); the divider is disconnected from the battery by the
+     * MOSFET between reads, which is what saves power. No cleanup needed here. */
 }
 
 /* Rain gauge initialization and handlers */

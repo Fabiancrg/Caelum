@@ -30,6 +30,16 @@ esp_err_t battery_monitor_init(void)
 {
     esp_err_t ret;
 
+    /* Already initialized: keep the existing ADC unit + calibration handles.
+     * The ADC and its calibration scheme are created ONCE and reused for the
+     * lifetime of the device. We intentionally do NOT tear them down after each
+     * read - repeatedly recreating the curve-fitting calibration was unreliable
+     * (it could silently fail after many sleep/wake cycles, dropping us to the
+     * crude raw*3300/4095 fallback which under-reads ~20% -> bogus ~3.3 V). */
+    if (adc_handle != NULL) {
+        return ESP_OK;
+    }
+
     /* Configure MOSFET enable GPIO */
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << BATTERY_ENABLE_GPIO),
@@ -150,8 +160,11 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
             return ret;
         }
     } else {
-        /* Fallback: approximate conversion for ESP32-H2 */
+        /* Fallback: approximate conversion for ESP32-H2. NOTE: this under-reads
+         * by ~20% vs the calibrated value and should essentially never run now
+         * that calibration is created once and kept - warn loudly if it does. */
         voltage_divider_mv = (adc_raw_avg * 3300) / 4095;
+        ESP_LOGW(TAG, "⚠️ ADC calibration unavailable - using crude fallback (battery voltage will read low!)");
     }
 
     /* Account for voltage divider (R1 + R2) / R2 */
@@ -161,23 +174,14 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
     last_voltage_mv = *voltage_mv;
     last_percentage = battery_voltage_to_percentage(*voltage_mv);
 
-    ESP_LOGI(TAG, "Battery: %d mV (%d%%) [ADC raw: %d, divider: %d mV]",
-             *voltage_mv, last_percentage, adc_raw_avg, voltage_divider_mv);
+    ESP_LOGI(TAG, "Battery: %d mV (%d%%) [ADC raw: %d, divider: %d mV, cal: %s]",
+             *voltage_mv, last_percentage, adc_raw_avg, voltage_divider_mv,
+             adc_calibrated ? "yes" : "NO");
 
-    /* Power optimization: release ADC peripheral so it can power down during sleep */
-    if (adc_handle != NULL) {
-        adc_oneshot_del_unit(adc_handle);
-        adc_handle = NULL;
-    }
-    if (adc_cali_handle != NULL) {
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-        adc_cali_delete_scheme_curve_fitting(adc_cali_handle);
-#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-        adc_cali_delete_scheme_line_fitting(adc_cali_handle);
-#endif
-        adc_cali_handle = NULL;
-        adc_calibrated = false;
-    }
+    /* The ADC unit and calibration scheme are intentionally kept alive between
+     * reads (see battery_monitor_init). Only the divider is disconnected from the
+     * battery, via the MOSFET enable GPIO already set low above - that is what
+     * saves power. adc_oneshot draws no meaningful current while idle. */
 
     return ESP_OK;
 }
