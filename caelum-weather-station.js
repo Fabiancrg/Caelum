@@ -1,6 +1,6 @@
-import * as m from 'zigbee-herdsman-converters/lib/modernExtend';
+const m = require('zigbee-herdsman-converters/lib/modernExtend');
 
-export default {
+module.exports = {
     zigbeeModel: ['caelum_pro'],
     model: 'caelum_pro',
     vendor: 'ESPRESSIF',

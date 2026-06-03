@@ -676,7 +676,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)wind_speed_read_and_report, 0, 2500); // Wind speed
             esp_zb_scheduler_alarm((esp_zb_callback_t)wind_dir_read_and_report, 0, 3000);   // Wind direction
             esp_zb_scheduler_alarm((esp_zb_callback_t)light_read_and_report, 0, 3500);      // Illuminance
-            esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 4000); // Update in 4 seconds
+            esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 1, 4000); // Force a real read after join (populates diagnostics)
             
             /* Start periodic sensor reading timer for 15-minute intervals.
              * This ensures sensors are read regularly and attributes stay updated.
@@ -1826,14 +1826,17 @@ static const char *BATTERY_TAG = "BATTERY";
 
 #define BATTERY_MIN_VOLTAGE     2.7f             // Li-Ion minimum safe voltage (V)
 #define BATTERY_MAX_VOLTAGE     4.2f             // Li-Ion maximum voltage (V)
+#define BATTERY_ADC_REBOOT_MIN_UPTIME_S  600     // don't auto-reboot to recover the ADC within 10 min of boot (anti-loop)
 
 static void battery_read_and_report(uint8_t param)
 {
-    // param: Always 0 (normal update - coordinator controls reporting)
+    // param: 0 = normal (honour the hourly gate); 1 = force a real ADC read now
+    // (used right after join so the diagnostic attributes populate promptly).
     // Forced reports fail after reboot because reporting config is not persisted
     bool force_report = false;
-    
-    ESP_LOGI(BATTERY_TAG, "🔧 battery_read_and_report() called");
+    bool force_now = (param != 0);
+
+    ESP_LOGI(BATTERY_TAG, "🔧 battery_read_and_report() called%s", force_now ? " (forced)" : "");
     
     /* Power optimization: Read battery only once per hour (time-based) to save ~360µAh/day
      * This ensures we read once per hour regardless of wake reason (rain vs timer).
@@ -1875,7 +1878,7 @@ static void battery_read_and_report(uint8_t param)
     }
     
     // Check if enough time has elapsed (skip interval check on first reading or forced read)
-    if (!first_reading && !force_read) {
+    if (!first_reading && !force_read && !force_now) {
         // Handle potential timer overflow on reboot: if last_battery_read_time is much larger
         // than current_time_sec, it means we rebooted and should read battery
         if (last_battery_read_time > current_time_sec) {
@@ -1986,7 +1989,29 @@ static void battery_read_and_report(uint8_t param)
                          s_last_good_mv, measured_mv, s_last_good_mv);
                 return;  // do NOT overwrite the cached good value; re-confirm next read
             }
-            ESP_LOGW(BATTERY_TAG, "Battery drop confirmed over two reads -> accepting %u mV", measured_mv);
+            /* Confirmed over two reads, and the driver's ADC self-heal already
+             * failed to recover it -> the ESP32-H2 ADC reference has drifted and
+             * only a full reset cures it. Reboot to restore correct readings, but
+             * only once we've been up long enough to rule out a startup boot-loop.
+             * NVS state (rainfall, battery cache) persists; the rejoin watchdog
+             * re-attaches to the network after the restart. */
+            uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+            if (uptime_s > BATTERY_ADC_REBOOT_MIN_UPTIME_S) {
+                nvs_handle_t rb_h;
+                if (nvs_open("storage", NVS_READWRITE, &rb_h) == ESP_OK) {
+                    uint32_t n = 0;
+                    nvs_get_u32(rb_h, "batt_reboots", &n);
+                    n++;
+                    nvs_set_u32(rb_h, "batt_reboots", n);
+                    nvs_commit(rb_h);
+                    nvs_close(rb_h);
+                }
+                ESP_LOGE(BATTERY_TAG, "🔁 Battery stuck low (%u mV) after ADC self-heal - rebooting to restore ADC reference", measured_mv);
+                vTaskDelay(pdMS_TO_TICKS(50));  // let the log flush
+                esp_restart();
+            }
+            ESP_LOGW(BATTERY_TAG, "Confirmed low battery %u mV but uptime %lus < reboot guard - accepting for now",
+                     measured_mv, (unsigned long)uptime_s);
         }
         s_drop_confirm = 0;
         s_last_good_mv = measured_mv;

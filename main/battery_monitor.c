@@ -32,6 +32,18 @@ static bool     last_calibrated = false; // was ADC calibration applied (vs crud
 /* MOSFET control timing */
 #define MOSFET_SETTLE_TIME_MS  10    // Time for voltage to stabilize after enabling MOSFETs
 
+/* DIAGNOSTIC TOGGLE: when 1, keep the divider permanently connected (no per-read
+ * MOSFET switching) to test whether the stateful low-battery fault lives in the
+ * switching path or the ADC. ~79 µA extra (~1.9 mAh/day, negligible for a test).
+ * If the battery STILL reads low with this on, the MOSFET is exonerated -> ADC.
+ * Set back to 0 to restore the normal low-power per-read switching. */
+#define BATTERY_MOSFET_ALWAYS_ON  0
+
+/* Self-heal: a healthy device (it's running, so the cell is > ~3.4 V) cannot
+ * truly read this low. If a read comes back below this, the ESP32-H2 ADC
+ * reference has drifted - reset the whole ADC subsystem and re-read once. */
+#define BATTERY_REHEAL_THRESHOLD_MV  3300
+
 esp_err_t battery_monitor_init(void)
 {
     esp_err_t ret;
@@ -60,9 +72,11 @@ esp_err_t battery_monitor_init(void)
         return ret;
     }
     
-    /* Start with MOSFETs disabled (low power) */
-    gpio_set_level(BATTERY_ENABLE_GPIO, 0);
-    ESP_LOGI(TAG, "MOSFET control configured on GPIO%d", BATTERY_ENABLE_GPIO);
+    /* Normally the MOSFET starts disabled (divider disconnected) and is switched on
+     * only during a read. With BATTERY_MOSFET_ALWAYS_ON it stays connected (test). */
+    gpio_set_level(BATTERY_ENABLE_GPIO, BATTERY_MOSFET_ALWAYS_ON ? 1 : 0);
+    ESP_LOGI(TAG, "MOSFET control configured on GPIO%d (always_on=%d)",
+             BATTERY_ENABLE_GPIO, BATTERY_MOSFET_ALWAYS_ON);
 
     /* Configure ADC */
     adc_oneshot_unit_init_cfg_t init_config = {
@@ -119,7 +133,7 @@ esp_err_t battery_monitor_init(void)
     return ESP_OK;
 }
 
-esp_err_t battery_read_voltage(uint16_t *voltage_mv)
+static esp_err_t battery_sample_once(uint16_t *voltage_mv)
 {
     if (!voltage_mv) return ESP_ERR_INVALID_ARG;
 
@@ -131,7 +145,22 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
         }
     }
 
-    /* Enable MOSFETs to connect battery to voltage divider */
+    /* Re-establish the MOSFET enable as a clean push-pull output right before each
+     * read. The fault is stateful (battery reads correct for hours, then low, only
+     * cured by reboot), so re-running gpio_config defends against the GPIO pad /
+     * drive / sleep-pull state being disturbed across many light-sleep cycles -
+     * which would leave the high-side P-FET only partially on and the divider
+     * sagging. This keeps the per-read low-power switching while making it robust. */
+    gpio_config_t en_conf = {
+        .pin_bit_mask = (1ULL << BATTERY_ENABLE_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&en_conf);
+
+    /* Enable the MOSFET to connect the battery to the divider, then let it settle. */
     gpio_set_level(BATTERY_ENABLE_GPIO, 1);
     vTaskDelay(pdMS_TO_TICKS(MOSFET_SETTLE_TIME_MS));
 
@@ -148,7 +177,7 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
             int adc_raw;
             esp_err_t ret = adc_oneshot_read(adc_handle, BATTERY_ADC_CHANNEL, &adc_raw);
             if (ret != ESP_OK) {
-                gpio_set_level(BATTERY_ENABLE_GPIO, 0);  // Disable MOSFETs
+                gpio_set_level(BATTERY_ENABLE_GPIO, 0);  // Disable MOSFET on error
                 ESP_LOGE(TAG, "ADC read failed");
                 return ret;
             }
@@ -158,8 +187,11 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
         vTaskDelay(pdMS_TO_TICKS(15));  // ~15 ms between bursts => ~100 ms total window
     }
 
-    /* Disable MOSFETs to save power */
-    gpio_set_level(BATTERY_ENABLE_GPIO, 0);
+    /* Disable the MOSFET (disconnect the divider) to save power between reads -
+     * unless we're holding it on for the diagnostic. */
+    if (!BATTERY_MOSFET_ALWAYS_ON) {
+        gpio_set_level(BATTERY_ENABLE_GPIO, 0);
+    }
 
     /* Median of the bursts (insertion sort of a small array, then middle value). */
     for (int i = 1; i < num_bursts; i++) {
@@ -200,10 +232,53 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
              *voltage_mv, last_percentage, adc_raw_avg, voltage_divider_mv,
              adc_calibrated ? "yes" : "NO");
 
-    /* The ADC unit and calibration scheme are intentionally kept alive between
-     * reads (see battery_monitor_init). Only the divider is disconnected from the
-     * battery, via the MOSFET enable GPIO already set low above - that is what
-     * saves power. adc_oneshot draws no meaningful current while idle. */
+    return ESP_OK;
+}
+
+/* Fully tear down and recreate the ADC unit + calibration scheme. Used by the
+ * self-heal path to clear an ADC reference that has drifted after light-sleep
+ * cycles - a more thorough reset than just re-reading. (If even this is not
+ * enough, the caller falls back to a controlled reboot, the known cure.) */
+static void battery_adc_reset(void)
+{
+    if (adc_cali_handle != NULL) {
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+        adc_cali_delete_scheme_curve_fitting(adc_cali_handle);
+#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+        adc_cali_delete_scheme_line_fitting(adc_cali_handle);
+#endif
+        adc_cali_handle = NULL;
+        adc_calibrated = false;
+    }
+    if (adc_handle != NULL) {
+        adc_oneshot_del_unit(adc_handle);
+        adc_handle = NULL;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));   // let the SAR analog settle while powered down
+    battery_monitor_init();         // recreate unit + channel + calibration fresh
+}
+
+esp_err_t battery_read_voltage(uint16_t *voltage_mv)
+{
+    esp_err_t ret = battery_sample_once(voltage_mv);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    /* Self-heal: a device that is clearly running cannot really be this empty, so
+     * an implausibly low reading means the ESP32-H2 ADC reference has drifted.
+     * Fully reset the ADC subsystem and re-read once. If it recovers, great (no
+     * reboot needed); if not, the report layer escalates to a controlled reboot. */
+    if (*voltage_mv < BATTERY_REHEAL_THRESHOLD_MV) {
+        uint16_t before = *voltage_mv;
+        ESP_LOGW(TAG, "🩹 Implausibly low battery (%u mV) - resetting ADC subsystem and re-reading", before);
+        battery_adc_reset();
+        uint16_t mv2 = 0;
+        if (battery_sample_once(&mv2) == ESP_OK) {
+            ESP_LOGW(TAG, "🩹 After ADC reset: %u mV (was %u mV)", mv2, before);
+            *voltage_mv = mv2;
+        }
+    }
 
     return ESP_OK;
 }
