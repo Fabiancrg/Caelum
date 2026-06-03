@@ -23,6 +23,12 @@ static bool adc_calibrated = false;
 static uint16_t last_voltage_mv = 0;
 static uint8_t last_percentage = 0;
 
+/* Diagnostics from the last read, surfaced over Zigbee so the battery path can
+ * be debugged on a battery-only device (no USB serial available). */
+static uint16_t last_raw_adc = 0;       // averaged/median raw ADC count
+static uint16_t last_divider_mv = 0;    // voltage at the ADC pin (pre divider-scaling)
+static bool     last_calibrated = false; // was ADC calibration applied (vs crude fallback)?
+
 /* MOSFET control timing */
 #define MOSFET_SETTLE_TIME_MS  10    // Time for voltage to stabilize after enabling MOSFETs
 
@@ -129,27 +135,40 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
     gpio_set_level(BATTERY_ENABLE_GPIO, 1);
     vTaskDelay(pdMS_TO_TICKS(MOSFET_SETTLE_TIME_MS));
 
-    /* Take multiple ADC samples for accuracy */
-    int adc_raw_sum = 0;
-    const int num_samples = 3;
-    
-    for (int i = 0; i < num_samples; i++) {
-        int adc_raw;
-        esp_err_t ret = adc_oneshot_read(adc_handle, BATTERY_ADC_CHANNEL, &adc_raw);
-        if (ret != ESP_OK) {
-            gpio_set_level(BATTERY_ENABLE_GPIO, 0);  // Disable MOSFETs
-            ESP_LOGE(TAG, "ADC read failed");
-            return ret;
+    /* Take several bursts spread over ~100 ms and use the MEDIAN. A transient dip
+     * (e.g. the cell sagging during a radio TX spike, or an ADC glitch) on one or
+     * two bursts then cannot drag the result down. Previously a single bad sample
+     * produced a spurious "empty battery" value that got cached for an hour. */
+    const int num_bursts = 7;
+    int burst_raw[7];
+    for (int b = 0; b < num_bursts; b++) {
+        int sum = 0;
+        const int sub = 3;
+        for (int i = 0; i < sub; i++) {
+            int adc_raw;
+            esp_err_t ret = adc_oneshot_read(adc_handle, BATTERY_ADC_CHANNEL, &adc_raw);
+            if (ret != ESP_OK) {
+                gpio_set_level(BATTERY_ENABLE_GPIO, 0);  // Disable MOSFETs
+                ESP_LOGE(TAG, "ADC read failed");
+                return ret;
+            }
+            sum += adc_raw;
         }
-        adc_raw_sum += adc_raw;
-        vTaskDelay(pdMS_TO_TICKS(1));
+        burst_raw[b] = sum / sub;
+        vTaskDelay(pdMS_TO_TICKS(15));  // ~15 ms between bursts => ~100 ms total window
     }
 
     /* Disable MOSFETs to save power */
     gpio_set_level(BATTERY_ENABLE_GPIO, 0);
 
-    /* Calculate average */
-    int adc_raw_avg = adc_raw_sum / num_samples;
+    /* Median of the bursts (insertion sort of a small array, then middle value). */
+    for (int i = 1; i < num_bursts; i++) {
+        int key = burst_raw[i];
+        int j = i - 1;
+        while (j >= 0 && burst_raw[j] > key) { burst_raw[j + 1] = burst_raw[j]; j--; }
+        burst_raw[j + 1] = key;
+    }
+    int adc_raw_avg = burst_raw[num_bursts / 2];  // median rejects transient outliers
 
     /* Convert to voltage */
     int voltage_divider_mv;
@@ -173,6 +192,9 @@ esp_err_t battery_read_voltage(uint16_t *voltage_mv)
     *voltage_mv = (uint16_t)battery_mv;
     last_voltage_mv = *voltage_mv;
     last_percentage = battery_voltage_to_percentage(*voltage_mv);
+    last_raw_adc = (uint16_t)adc_raw_avg;
+    last_divider_mv = (uint16_t)voltage_divider_mv;
+    last_calibrated = adc_calibrated;
 
     ESP_LOGI(TAG, "Battery: %d mV (%d%%) [ADC raw: %d, divider: %d mV, cal: %s]",
              *voltage_mv, last_percentage, adc_raw_avg, voltage_divider_mv,
@@ -229,3 +251,8 @@ uint8_t battery_get_zigbee_percentage(void)
     /* Zigbee spec: percentage * 2 (200 = 100%) */
     return last_percentage * 2;
 }
+
+/* Diagnostics from the last read (surfaced over Zigbee). */
+uint16_t battery_get_last_raw_adc(void)    { return last_raw_adc; }
+uint16_t battery_get_last_divider_mv(void) { return last_divider_mv; }
+bool     battery_get_last_calibrated(void) { return last_calibrated; }

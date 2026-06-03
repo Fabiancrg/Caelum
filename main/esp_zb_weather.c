@@ -1039,7 +1039,24 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_power_config_cluster_add_attr(esp_zb_power_cluster, 0x0034, &battery_rated_voltage);              // Battery Rated Voltage
     esp_zb_power_config_cluster_add_attr(esp_zb_power_cluster, 0x0035, &battery_alarm_mask);                 // Battery Alarm Mask
     esp_zb_power_config_cluster_add_attr(esp_zb_power_cluster, 0x0036, &battery_voltage_min_threshold);      // Battery Voltage Min Threshold
-    
+
+    /* Custom diagnostic attributes (read-only). Surfaced so the battery path can
+     * be inspected over Zigbee on a battery-only device (no USB serial). Read in
+     * the Z2M dev console: genPowerCfg attribute 0x4000..0x4003.
+     *   0x4000 = raw ADC count, 0x4001 = ADC-pin mV (pre divider scaling),
+     *   0x4002 = calibration applied (1) vs crude fallback (0),
+     *   0x4003 = device uptime at last read (minutes). */
+    uint16_t diag_raw_adc = 0, diag_divider_mv = 0, diag_uptime_min = 0;
+    uint8_t  diag_calibrated = 0;
+    esp_zb_cluster_add_attr(esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, 0x4000, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_raw_adc);
+    esp_zb_cluster_add_attr(esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, 0x4001, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_divider_mv);
+    esp_zb_cluster_add_attr(esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, 0x4002, ESP_ZB_ZCL_ATTR_TYPE_U8,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_calibrated);
+    esp_zb_cluster_add_attr(esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, 0x4003, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_uptime_min);
+
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(esp_zb_bme280_clusters, esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 
     /* Add OTA client cluster to environmental sensor endpoint for firmware updates */
@@ -1932,6 +1949,47 @@ static void battery_read_and_report(uint8_t param)
     } else {
         battery_voltage = battery_mv / 1000.0f;
         ESP_LOGI(BATTERY_TAG, "📊 Battery: %.2fV (%u mV)", battery_voltage, battery_mv);
+    }
+
+    /* Publish per-read diagnostics (genPowerCfg 0x4000..0x4003) BEFORE the glitch
+     * guard, so a rejected low read is still visible over Zigbee. Inspect in the
+     * Z2M dev console: 0x4000=raw ADC, 0x4001=ADC-pin mV, 0x4002=cal applied(1)/
+     * fallback(0), 0x4003=uptime minutes. */
+    {
+        uint16_t diag_raw = battery_get_last_raw_adc();
+        uint16_t diag_div_mv = battery_get_last_divider_mv();
+        uint8_t  diag_cal = battery_get_last_calibrated() ? 1 : 0;
+        uint16_t diag_uptime_min = (uint16_t)((esp_timer_get_time() / 1000000ULL) / 60ULL);
+        esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4000, &diag_raw, false);
+        esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4001, &diag_div_mv, false);
+        esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4002, &diag_cal, false);
+        esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4003, &diag_uptime_min, false);
+    }
+
+    /* Glitch guard: a Li-Ion under this tiny load cannot really lose hundreds of
+     * mV between reads. Require a large sudden DROP to be confirmed by a second
+     * consecutive low read before we believe it, so one bad measurement can't
+     * poison the value that then gets cached/re-published for an hour. */
+    {
+        static uint16_t s_last_good_mv = 0;
+        static uint8_t  s_drop_confirm = 0;
+        const uint16_t  MAX_PLAUSIBLE_DROP_MV = 500;
+        uint16_t measured_mv = (uint16_t)(battery_voltage * 1000.0f);
+
+        if (s_last_good_mv != 0 && measured_mv + MAX_PLAUSIBLE_DROP_MV < s_last_good_mv) {
+            if (++s_drop_confirm < 2) {
+                ESP_LOGW(BATTERY_TAG, "⚠️ Implausible battery drop %u -> %u mV - ignoring (keeping last good %u mV)",
+                         s_last_good_mv, measured_mv, s_last_good_mv);
+                return;  // do NOT overwrite the cached good value; re-confirm next read
+            }
+            ESP_LOGW(BATTERY_TAG, "Battery drop confirmed over two reads -> accepting %u mV", measured_mv);
+        }
+        s_drop_confirm = 0;
+        s_last_good_mv = measured_mv;
     }
 
     // Calculate battery percentage from the shared Li-Ion discharge curve

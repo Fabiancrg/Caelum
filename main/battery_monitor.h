@@ -7,6 +7,7 @@
 
 #include "esp_err.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,6 +58,15 @@ uint8_t battery_get_zigbee_voltage(void);
  * @return Percentage * 2 (Zigbee spec: 200 = 100%)
  */
 uint8_t battery_get_zigbee_percentage(void);
+
+/**
+ * @brief Diagnostics from the most recent battery read.
+ * Exposed so the battery path can be debugged over Zigbee on a battery-only
+ * device with no USB serial. @see battery_read_voltage()
+ */
+uint16_t battery_get_last_raw_adc(void);     /*!< averaged/median raw ADC count */
+uint16_t battery_get_last_divider_mv(void);  /*!< voltage at the ADC pin, pre divider-scaling */
+bool     battery_get_last_calibrated(void);  /*!< true if ADC calibration was applied (vs crude fallback) */
 
 #ifdef __cplusplus
 }
