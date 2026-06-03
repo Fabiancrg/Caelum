@@ -1056,6 +1056,12 @@ static void esp_zb_task(void *pvParameters)
                             ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_calibrated);
     esp_zb_cluster_add_attr(esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, 0x4003, ESP_ZB_ZCL_ATTR_TYPE_U16,
                             ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_uptime_min);
+    /* 0x4004 = count of auto-reboots triggered by the ADC self-heal fallback.
+     * If this stays 0 over a day, the ADC reset alone is recovering the drift;
+     * if it climbs, the reboot fallback is doing the work. */
+    uint16_t diag_reboots = 0;
+    esp_zb_cluster_add_attr(esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, 0x4004, ESP_ZB_ZCL_ATTR_TYPE_U16,
+                            ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &diag_reboots);
 
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(esp_zb_bme280_clusters, esp_zb_power_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 
@@ -1971,6 +1977,16 @@ static void battery_read_and_report(uint8_t param)
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4002, &diag_cal, false);
         esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
                                      ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4003, &diag_uptime_min, false);
+
+        uint32_t diag_reboots32 = 0;
+        nvs_handle_t d_h;
+        if (nvs_open("storage", NVS_READONLY, &d_h) == ESP_OK) {
+            nvs_get_u32(d_h, "batt_reboots", &diag_reboots32);
+            nvs_close(d_h);
+        }
+        uint16_t diag_reboots = (uint16_t)diag_reboots32;
+        esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, 0x4004, &diag_reboots, false);
     }
 
     /* Glitch guard: a Li-Ion under this tiny load cannot really lose hundreds of

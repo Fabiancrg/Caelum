@@ -68,6 +68,13 @@ module.exports = {
             unit: "min",
             access: "STATE_GET",
         }),
+        m.numeric({
+            name: "batt_reboots",
+            cluster: "genPowerCfg",
+            attribute: {ID: 0x4004, type: 0x21}, // uint16
+            description: "Auto-reboots triggered to recover ADC drift",
+            access: "STATE_GET",
+        }),
 
         // EP2 - rain gauge total (mm)
         m.numeric({
