@@ -33,48 +33,11 @@ module.exports = {
         }),
         m.battery(),
 
-        // EP1 - battery diagnostics (custom genPowerCfg attributes 0x4000-0x4003).
-        // Temporary instrumentation to debug the battery-voltage drift on a
-        // battery-only device (no serial). Read on demand from the device page.
-        //   batt_cal_ok = 0  -> ADC calibration fell back to crude formula (~20% low)
-        //   batt_adc_mv      -> voltage at the ADC pin before the x52/30 divider scaling
-        m.numeric({
-            name: "batt_adc_raw",
-            cluster: "genPowerCfg",
-            attribute: {ID: 0x4000, type: 0x21}, // uint16
-            description: "Battery ADC raw count (diagnostic)",
-            access: "STATE_GET",
-        }),
-        m.numeric({
-            name: "batt_adc_mv",
-            cluster: "genPowerCfg",
-            attribute: {ID: 0x4001, type: 0x21}, // uint16
-            description: "Battery ADC-pin voltage (before divider scaling)",
-            unit: "mV",
-            access: "STATE_GET",
-        }),
-        m.numeric({
-            name: "batt_cal_ok",
-            cluster: "genPowerCfg",
-            attribute: {ID: 0x4002, type: 0x20}, // uint8: 1 = calibrated, 0 = fallback
-            description: "ADC calibration applied (1) vs crude fallback (0)",
-            access: "STATE_GET",
-        }),
-        m.numeric({
-            name: "batt_uptime_min",
-            cluster: "genPowerCfg",
-            attribute: {ID: 0x4003, type: 0x21}, // uint16
-            description: "Device uptime at last battery read",
-            unit: "min",
-            access: "STATE_GET",
-        }),
-        m.numeric({
-            name: "batt_reboots",
-            cluster: "genPowerCfg",
-            attribute: {ID: 0x4004, type: 0x21}, // uint16
-            description: "Auto-reboots triggered to recover ADC drift",
-            access: "STATE_GET",
-        }),
+        // NOTE: the firmware also exposes battery ADC diagnostics on genPowerCfg
+        // attributes 0x4000-0x4004 (raw ADC, ADC-pin mV, cal flag, uptime, auto-
+        // reboot count). They are intentionally NOT surfaced here to keep the
+        // device page clean - read them on demand via the Z2M dev console by
+        // numeric attribute ID if the battery ADC ever needs debugging again.
 
         // EP2 - rain gauge total (mm)
         m.numeric({
