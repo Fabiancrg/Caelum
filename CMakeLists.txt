@@ -10,7 +10,7 @@ idf_build_set_property(MINIMAL_BUILD ON)
 project(caelum_pro)
 
 # Version configuration
-set(PROJECT_VER "1.0")
+set(PROJECT_VER "1.1")
 set(BUILD_NUMBER 0)
 set(MANUFACTURER_CODE "0xFABC")
 set(IMAGE_TYPE "0x1202")   # Caelum Pro - distinct from Caelum_Lite (0x1200) so OTA images cannot cross-flash

@@ -193,7 +193,7 @@ static void debug_led_blink_red(void)
 }
 
 /* Rain gauge configuration (RAIN_GAUGE_GPIO defined in esp_zb_weather.h) */
-#define RAIN_MM_PER_PULSE       0.36f           // mm of rain per bucket tip (adjust for your sensor)
+#define RAIN_MM_PER_PULSE       0.64f           // mm of rain per bucket tip (adjust for your sensor)
 
 typedef enum {
     RAIN_EVENT_PULSE = 0,
