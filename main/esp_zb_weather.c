@@ -218,6 +218,18 @@ static bool rain_gauge_enabled = false;  // Only enable when connected to networ
 static bool rain_gauge_isr_installed = false;  // Track ISR installation state
 static esp_timer_handle_t rain_flush_timer = NULL;
 
+/* The rain input is LEVEL-triggered: light-sleep GPIO wake only supports levels,
+ * and gpio_wakeup_enable() also forces the pin's interrupt type to that level.
+ * The ISR therefore disables the pin interrupt on every change, and
+ * rain_gauge_task re-arms interrupt + wake for the level opposite to the line's
+ * CURRENT level. This avoids an interrupt storm and a sleep/wake livelock when
+ * the bucket comes to rest with its magnet in front of the sensor. */
+#define RAIN_ACTIVE_LEVEL       0       // DRV5032: open-drain, active-LOW = magnet present
+#define RAIN_SETTLE_MS          20      // let the line settle before re-arming
+static volatile bool rain_irq_pending = false;  // set by ISR, cleared by rain_gauge_task
+static volatile TickType_t rain_irq_tick = 0;   // tick of the last level change
+static int rain_armed_level = RAIN_ACTIVE_LEVEL; // level currently awaited (rain task / init only)
+
 /* v2.0: Pulse counter variables removed */
 
 /* DS18B20 temperature sensor (GPIO24) */
@@ -340,6 +352,9 @@ static esp_err_t deferred_driver_init(void)
 #if BUS2_PROBE_ENABLED
     uint8_t bus2_found[32];
     int bus2_count = i2c_bus_scan(i2c_bus2, bus2_found, sizeof(bus2_found));
+    /* i2c_bus_scan() returns the total number of responders, which can exceed
+     * the buffer size (it only stores the first sizeof(bus2_found)). */
+    if (bus2_count > (int)sizeof(bus2_found)) bus2_count = sizeof(bus2_found);
     if (bus2_count <= 0) {
         ESP_LOGW(TAG, "No I2C devices detected on Bus 2 - skipping AS5600/VEML7700 init");
     } else {
@@ -1365,7 +1380,10 @@ static void builtin_button_callback(button_action_t action)
         if (action == BUTTON_ACTION_HOLD) {
             /* Long press detected - Factory reset */
             ESP_LOGW(TAG, "🔄 Factory reset triggered by long press - device will restart and rejoin network");
+            /* Runs in the builtin_button task, not the Zigbee task: hold the stack lock. */
+            esp_zb_lock_acquire(portMAX_DELAY);
             esp_zb_scheduler_alarm((esp_zb_callback_t)factory_reset_device, 0, 100);
+            esp_zb_lock_release();
         }
     }
 }
@@ -1476,8 +1494,13 @@ static void periodic_sensor_report_callback(void *arg)
         /* Schedule sensor reads via Zigbee scheduler to avoid ISR context issues.
          * Note: These functions update Zigbee attributes but don't force reporting.
          * The Zigbee stack will automatically send reports based on the coordinator's
-         * reporting configuration (min/max intervals, reportable change thresholds). */
-        
+         * reporting configuration (min/max intervals, reportable change thresholds).
+         *
+         * CRITICAL: this runs in the esp_timer task, NOT the Zigbee task, so the
+         * esp_zb_scheduler_alarm() calls below must hold the stack lock - same rule
+         * as the rain flush and the rejoin watchdog. */
+        esp_zb_lock_acquire(portMAX_DELAY);
+
         /* Endpoint 1: Environmental sensors (temperature, humidity, pressure, battery) */
         esp_zb_scheduler_alarm((esp_zb_callback_t)env_read_and_report, 0, 100);
         
@@ -1494,6 +1517,8 @@ static void periodic_sensor_report_callback(void *arg)
 
         /* Battery is read hourly based on its own time tracking */
         esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 400);
+
+        esp_zb_lock_release();
     } else {
         ESP_LOGW(TAG, "⏰ Periodic timer fired but network disconnected - skipping sensor read");
     }
@@ -1636,21 +1661,38 @@ static void IRAM_ATTR rain_gauge_isr_handler(void *arg)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    /* Prepare event with ISR tick for accurate timing */
+    /* Level-triggered: disable now or it re-fires for as long as the line stays
+     * at the armed level. rain_gauge_task re-arms it (see rain_gauge_rearm). */
+    gpio_intr_disable(RAIN_GAUGE_GPIO);
+    rain_irq_tick = xTaskGetTickCountFromISR();
+    rain_irq_pending = true;
+
     rain_evt_t evt = {
         .type = RAIN_EVENT_PULSE,
-        .tick = xTaskGetTickCountFromISR(),
+        .tick = rain_irq_tick,
         .force_nvs = false,
         .force_attribute = false,
     };
 
-    /* Only queue event if there's space - prevents overflow from rapid pulses.
-     * If the queue is full the pulse is dropped, but this prevents a crash. */
+    /* The event only wakes the task; the state lives in rain_irq_pending. If the
+     * queue is full the event is dropped, and the next event the task receives
+     * (e.g. a periodic flush) handles the pending change instead. */
     xQueueSendFromISR(rain_gauge_evt_queue, &evt, &xHigherPriorityTaskWoken);
     
     if (xHigherPriorityTaskWoken) {
         portYIELD_FROM_ISR();
     }
+}
+
+/* Arm the rain pin's interrupt and light-sleep wake for the level opposite to
+ * `current_level`, so the wake condition is never already true when we sleep. */
+static void rain_gauge_rearm(int current_level)
+{
+    rain_armed_level = !current_level;
+    gpio_int_type_t type = rain_armed_level ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL;
+    gpio_set_intr_type(RAIN_GAUGE_GPIO, type);
+    gpio_wakeup_enable(RAIN_GAUGE_GPIO, type);
+    gpio_intr_enable(RAIN_GAUGE_GPIO);
 }
 
 static void rain_gauge_task(void *arg)
@@ -1666,11 +1708,21 @@ static void rain_gauge_task(void *arg)
 
     for (;;) {
         if (xQueueReceive(rain_gauge_evt_queue, &evt, portMAX_DELAY)) {
-            switch (evt.type) {
-            case RAIN_EVENT_PULSE: {
-                TickType_t current_time = evt.tick;
+            /* Handle a pending level change on any event (not only PULSE), so a
+             * PULSE event dropped on a full queue is never lost for good. */
+            if (rain_irq_pending) {
+                rain_irq_pending = false;
+                TickType_t current_time = rain_irq_tick;
+                /* One count per tip, when the magnet arrives (line -> active level).
+                 * The magnet leaving only re-arms. */
+                bool magnet_arrived = (rain_armed_level == RAIN_ACTIVE_LEVEL);
 
-                if ((current_time - last_pulse_time) > DEBOUNCE_TIME) {
+                vTaskDelay(pdMS_TO_TICKS(RAIN_SETTLE_MS));
+                rain_gauge_rearm(gpio_get_level(RAIN_GAUGE_GPIO));
+
+                if (!magnet_arrived) {
+                    ESP_LOGD(RAIN_TAG, "Magnet left sensor - re-armed");
+                } else if ((current_time - last_pulse_time) > DEBOUNCE_TIME) {
                     last_pulse_time = current_time;
                     pending_pulse_count++;
                     rain_pulse_count++;
@@ -1704,10 +1756,9 @@ static void rain_gauge_task(void *arg)
                     ESP_LOGD(RAIN_TAG, "Pulse ignored - debounce active (%u ms)",
                              pdTICKS_TO_MS(current_time - last_pulse_time));
                 }
-                break;
             }
 
-            case RAIN_EVENT_FLUSH: {
+            if (evt.type == RAIN_EVENT_FLUSH) {
                 bool do_nvs = pending_nvs_flush || evt.force_nvs;
                 bool do_attr = pending_attr_flush || evt.force_attribute;
 
@@ -1720,11 +1771,6 @@ static void rain_gauge_task(void *arg)
                 if (rain_flush_timer != NULL) {
                     esp_timer_stop(rain_flush_timer);
                 }
-                break;
-            }
-
-            default:
-                break;
             }
         }
     }
@@ -1801,19 +1847,27 @@ static void rain_gauge_enable_isr(void)
     
     // Set enabled flag first
     rain_gauge_enabled = true;
-    
-    // Add ISR handler (will succeed even if already added)
+
+    /* The ISR posts to rain_gauge_evt_queue; if rain_gauge_init() bailed out
+     * before creating it, attaching the ISR would assert on the first tip. */
+    if (rain_gauge_evt_queue == NULL) {
+        ESP_LOGE(RAIN_TAG, "❌ Rain gauge event queue not created - not enabling ISR");
+        return;
+    }
+
+    /* Normally rain_gauge_init() already installed and armed the ISR. Leave the
+     * interrupt alone then: rain_gauge_task owns enabling it (the ISR disables it
+     * on every level change until the task re-arms it). */
+    if (rain_gauge_isr_installed) {
+        ESP_LOGI(RAIN_TAG, "✅ Rain gauge ISR already installed and armed");
+        return;
+    }
+
     esp_err_t ret = gpio_isr_handler_add(RAIN_GAUGE_GPIO, rain_gauge_isr_handler, NULL);
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK || ret == ESP_ERR_INVALID_STATE) {
         rain_gauge_isr_installed = true;
         ESP_LOGI(RAIN_TAG, "✅ Rain gauge ISR enabled successfully on GPIO%d", RAIN_GAUGE_GPIO);
-        /* Ensure interrupt line is enabled so events will be delivered */
-        gpio_intr_enable(RAIN_GAUGE_GPIO);
-    } else if (ret == ESP_ERR_INVALID_STATE) {
-        // ISR already installed - this is fine
-        rain_gauge_isr_installed = true;
-        ESP_LOGI(RAIN_TAG, "✅ Rain gauge ISR already installed, now enabled");
-        /* Make sure the interrupt line is enabled in case it was disabled */
+        /* Interrupt type / wake level were armed in rain_gauge_init() */
         gpio_intr_enable(RAIN_GAUGE_GPIO);
     } else {
         ESP_LOGE(RAIN_TAG, "❌ Failed to enable rain gauge ISR: %s", esp_err_to_name(ret));
@@ -2130,11 +2184,11 @@ static void rain_gauge_init(void)
      * line is defined even if the board's external pull-up is missing/weak/wrong-
      * footprint (a floating line was a prime suspect for "rain gauge not working").
      * The internal pull-up is harmless if an external one is also present.
-     * Counting edge left as POSEDGE: with a pull-up the line rests HIGH and a
-     * bucket tip pulls it LOW briefly, so the rising edge (magnet leaving) is one
-     * count per tip. Verify one tip == one count on the bench via the monitor log. */
+     * The interrupt type is set below together with the wake level (they share
+     * one register): a tip is counted when the line goes LOW (magnet arrives).
+     * Verify one tip == one count on the bench via the monitor log. */
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_POSEDGE,
+        .intr_type = GPIO_INTR_DISABLE,
         .pin_bit_mask = (1ULL << RAIN_GAUGE_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = 1,
@@ -2157,8 +2211,12 @@ static void rain_gauge_init(void)
      * pin is ALREADY at makes the wake condition immediately true, so the stack
      * wakes the instant it tries to sleep - a sleep/wake livelock that starves
      * the IDLE task and trips the task watchdog. Always arm the OPPOSITE of the
-     * current resting level, so a bucket tip (which toggles the line) wakes us. */
-    gpio_int_type_t wake_level = initial_level ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
+     * current level, so a bucket tip (which toggles the line) wakes us.
+     * rain_gauge_task re-arms after every change (rain_gauge_rearm), so this
+     * stays true whichever side the bucket comes to rest on. */
+    rain_armed_level = !initial_level;
+    gpio_int_type_t wake_level = rain_armed_level ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL;
+    gpio_set_intr_type(RAIN_GAUGE_GPIO, wake_level);
     ret = gpio_wakeup_enable(RAIN_GAUGE_GPIO, wake_level);
     if (ret == ESP_OK) {
         ESP_LOGI(RAIN_TAG, "✅ GPIO%d armed as light-sleep wake source (wake on %s, resting=%d)",
@@ -2225,8 +2283,8 @@ static void rain_gauge_init(void)
     }
 
     ESP_LOGI(RAIN_TAG, "Rain gauge initialized successfully. Current total: %.2f mm", total_rainfall_mm);
-    ESP_LOGI(RAIN_TAG, "🔧 GPIO%d configured: level=%d, pull-up=enabled, trigger=POSEDGE",
-             RAIN_GAUGE_GPIO, gpio_get_level(RAIN_GAUGE_GPIO));
+    ESP_LOGI(RAIN_TAG, "🔧 GPIO%d configured: level=%d, pull-up=enabled, trigger=%s level (re-armed on each change)",
+             RAIN_GAUGE_GPIO, gpio_get_level(RAIN_GAUGE_GPIO), rain_armed_level ? "HIGH" : "LOW");
     
     /* Initial rain value will be reported after network join (see signal handler) */
     ESP_LOGI(RAIN_TAG, "Rain gauge ready - initial report will occur after network connection");

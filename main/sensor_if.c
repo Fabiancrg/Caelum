@@ -23,14 +23,20 @@ esp_err_t sensor_init(i2c_bus_handle_t i2c_bus)
 
     // Diagnostic scan: list all devices on the bus to help debug NACKs
     uint8_t found[32];
+    // i2c_bus_scan() returns the total number of responders, which can exceed
+    // sizeof(found) (e.g. a floating/faulty bus where every address "ACKs").
     int n = i2c_bus_scan(i2c_bus, found, sizeof(found));
+    int stored = n > (int)sizeof(found) ? (int)sizeof(found) : n;
     if (n == 0) {
         ESP_LOGW(TAG, "I2C scan: no devices found on bus");
     } else {
         char buf[128];
-        int off = 0;
-        off += snprintf(buf + off, sizeof(buf) - off, "I2C scan: %d device(s):", n);
-        for (int i = 0; i < n; ++i) off += snprintf(buf + off, sizeof(buf) - off, " 0x%02x", found[i]);
+        int off = snprintf(buf, sizeof(buf), "I2C scan: %d device(s):", n);
+        // Stop once the buffer is full: snprintf returns the untruncated length,
+        // so letting off pass sizeof(buf) would make sizeof(buf) - off wrap around.
+        for (int i = 0; i < stored && off < (int)sizeof(buf); ++i) {
+            off += snprintf(buf + off, sizeof(buf) - off, " 0x%02x", found[i]);
+        }
         ESP_LOGI(TAG, "%s", buf);
     }
 
