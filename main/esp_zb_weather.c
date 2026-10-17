@@ -340,6 +340,9 @@ static esp_err_t deferred_driver_init(void)
 #if BUS2_PROBE_ENABLED
     uint8_t bus2_found[32];
     int bus2_count = i2c_bus_scan(i2c_bus2, bus2_found, sizeof(bus2_found));
+    /* i2c_bus_scan() returns the total number of responders, which can exceed
+     * the buffer size (it only stores the first sizeof(bus2_found)). */
+    if (bus2_count > (int)sizeof(bus2_found)) bus2_count = sizeof(bus2_found);
     if (bus2_count <= 0) {
         ESP_LOGW(TAG, "No I2C devices detected on Bus 2 - skipping AS5600/VEML7700 init");
     } else {
@@ -1365,7 +1368,10 @@ static void builtin_button_callback(button_action_t action)
         if (action == BUTTON_ACTION_HOLD) {
             /* Long press detected - Factory reset */
             ESP_LOGW(TAG, "🔄 Factory reset triggered by long press - device will restart and rejoin network");
+            /* Runs in the builtin_button task, not the Zigbee task: hold the stack lock. */
+            esp_zb_lock_acquire(portMAX_DELAY);
             esp_zb_scheduler_alarm((esp_zb_callback_t)factory_reset_device, 0, 100);
+            esp_zb_lock_release();
         }
     }
 }
@@ -1476,8 +1482,13 @@ static void periodic_sensor_report_callback(void *arg)
         /* Schedule sensor reads via Zigbee scheduler to avoid ISR context issues.
          * Note: These functions update Zigbee attributes but don't force reporting.
          * The Zigbee stack will automatically send reports based on the coordinator's
-         * reporting configuration (min/max intervals, reportable change thresholds). */
-        
+         * reporting configuration (min/max intervals, reportable change thresholds).
+         *
+         * CRITICAL: this runs in the esp_timer task, NOT the Zigbee task, so the
+         * esp_zb_scheduler_alarm() calls below must hold the stack lock - same rule
+         * as the rain flush and the rejoin watchdog. */
+        esp_zb_lock_acquire(portMAX_DELAY);
+
         /* Endpoint 1: Environmental sensors (temperature, humidity, pressure, battery) */
         esp_zb_scheduler_alarm((esp_zb_callback_t)env_read_and_report, 0, 100);
         
@@ -1494,6 +1505,8 @@ static void periodic_sensor_report_callback(void *arg)
 
         /* Battery is read hourly based on its own time tracking */
         esp_zb_scheduler_alarm((esp_zb_callback_t)battery_read_and_report, 0, 400);
+
+        esp_zb_lock_release();
     } else {
         ESP_LOGW(TAG, "⏰ Periodic timer fired but network disconnected - skipping sensor read");
     }
@@ -1801,7 +1814,14 @@ static void rain_gauge_enable_isr(void)
     
     // Set enabled flag first
     rain_gauge_enabled = true;
-    
+
+    /* The ISR posts to rain_gauge_evt_queue; if rain_gauge_init() bailed out
+     * before creating it, attaching the ISR would assert on the first tip. */
+    if (rain_gauge_evt_queue == NULL) {
+        ESP_LOGE(RAIN_TAG, "❌ Rain gauge event queue not created - not enabling ISR");
+        return;
+    }
+
     // Add ISR handler (will succeed even if already added)
     esp_err_t ret = gpio_isr_handler_add(RAIN_GAUGE_GPIO, rain_gauge_isr_handler, NULL);
     if (ret == ESP_OK) {
