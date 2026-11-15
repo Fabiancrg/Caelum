@@ -850,7 +850,7 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
             } else if (report_attr_message->cluster == ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT) {
                 int16_t pressure_raw = report_attr_message->attribute.data.value ? 
                                      *(int16_t*)report_attr_message->attribute.data.value : 0;
-                ESP_LOGI(TAG, "📡 Pressure: %.1f hPa", pressure_raw / 10.0f);
+                ESP_LOGI(TAG, "📡 Pressure: %d hPa", pressure_raw);
             } else {
                 // Minimal logging for other clusters
                 ESP_LOGD(TAG, "📤 Report: EP%d, cluster 0x%x", 
@@ -1014,8 +1014,8 @@ static void esp_zb_task(void *pvParameters)
     
     /* Create Pressure measurement cluster with REPORTING flag */
     int16_t pressure_value = ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_UNKNOWN;  // Invalid/unknown initially
-    int16_t pressure_min = 300 * 10;   // 300 hPa in 0.1 kPa units (30 kPa minimum)
-    int16_t pressure_max = 1100 * 10;  // 1100 hPa in 0.1 kPa units (110 kPa maximum)
+    int16_t pressure_min = 300;    // ZCL unit is 0.1 kPa == 1 hPa (300 hPa minimum)
+    int16_t pressure_max = 1100;   // 1100 hPa maximum
     esp_zb_attribute_list_t *esp_zb_pressure_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT);
     ESP_ERROR_CHECK(esp_zb_cluster_add_attr(esp_zb_pressure_cluster, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
                                             ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_S16,
@@ -1454,12 +1454,12 @@ static void env_read_and_report(uint8_t param)
     /* Read pressure */
     ret = sensor_read_pressure(&pressure);
     if (ret == ESP_OK) {
-        int16_t pressure_zigbee = (int16_t)(pressure * 10); // hPa -> 0.1 kPa units
+        int16_t pressure_zigbee = (int16_t)lroundf(pressure); // ZCL unit is 0.1 kPa == 1 hPa
         ret = esp_zb_zcl_set_attribute_val(HA_ESP_ENV_SENSOR_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
                                            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID,
                                            &pressure_zigbee, force_report);
         if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "🌪️  Pressure: %.2f hPa (raw: %d x0.1kPa - attribute updated)", pressure, pressure_zigbee);
+            ESP_LOGI(TAG, "🌪️  Pressure: %.2f hPa (raw: %d hPa - attribute updated)", pressure, pressure_zigbee);
         } else {
             ESP_LOGE(TAG, "Failed to update pressure attribute: %s", esp_err_to_name(ret));
         }

@@ -29,7 +29,7 @@ module.exports = {
         m.pressure({
             endpointNames: ["1"],
             access: "STATE_GET",
-            reporting: {min: 10, max: 3600, change: 10},
+            reporting: {min: 10, max: 3600, change: 1}, // measuredValue unit = 1 hPa
         }),
         m.battery(),
 
