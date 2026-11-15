@@ -254,6 +254,24 @@ static uint32_t connection_retry_count = 0;
 #define REJOIN_WATCHDOG_INTERVAL_MS     (5 * 60 * 1000ULL)   // attempt rejoin / check link every 5 minutes
 static esp_timer_handle_t rejoin_watchdog_timer = NULL;
 
+/* Reboot-based recovery: BDB network steering can only join a network whose
+ * permit-join window is open, and on a stack that still believes it is joined
+ * it merely broadcasts a permit-join request and reports success. Neither gets
+ * a previously-commissioned device back onto a closed network. The secure
+ * rejoin with the stored network key only runs during BDB initialization, i.e.
+ * at boot - so when a commissioned device stays offline, the watchdog reboots.
+ *
+ * To avoid draining the battery while the coordinator is down for hours, the
+ * wait before each reboot doubles (1, 2, 4, 8, then 12 watchdog cycles = 5 min
+ * ... 60 min). The backoff level lives in RTC no-init memory so it survives
+ * esp_restart(), and is cleared only by a confirmed APS delivery - the one
+ * proof that the link really works end to end. */
+#define REJOIN_REBOOT_MAGIC             0x524A4E31UL    // "RJN1"
+#define REJOIN_REBOOT_MAX_LEVEL         4
+#define REJOIN_REBOOT_MAX_CYCLES        12              // 12 x 5 min = 60 min between reboots at most
+static RTC_NOINIT_ATTR uint32_t rejoin_reboot_magic;
+static RTC_NOINIT_ATTR uint32_t rejoin_reboot_level;
+
 /* Delivery heartbeat: the APS data-confirm callback reports the TX status of
  * every outgoing APS frame. Repeated delivery failures mean our parent/route is
  * gone even though the stack may still consider us "joined" - a silent parent
@@ -1574,13 +1592,17 @@ static void stop_periodic_reading(void)
  * MUST hold the stack lock - same rule as the rain flush. Fires periodically and:
  *   - detects runtime parent loss (stack says not-joined while we think we are
  *     connected) and corrects our state, and
- *   - re-attempts network steering whenever we are disconnected, so the device
- *     keeps trying to rejoin forever instead of giving up. */
+ *   - while disconnected: a factory-new device keeps re-attempting network
+ *     steering; a commissioned device reboots (with backoff) so that BDB
+ *     initialization performs a secure rejoin - see REJOIN_REBOOT_* above. */
 static void rejoin_watchdog_cb(void *arg)
 {
+    static uint32_t offline_cycles = 0;     // consecutive watchdog ticks spent disconnected (esp_timer task only)
     bool joined;
+    bool factory_new;
     esp_zb_lock_acquire(portMAX_DELAY);
     joined = esp_zb_bdb_dev_joined();
+    factory_new = esp_zb_bdb_is_factory_new();
     esp_zb_lock_release();
 
     /* Runtime parent loss: flagged connected but the stack is no longer joined. */
@@ -1593,9 +1615,43 @@ static void rejoin_watchdog_cb(void *arg)
         int64_t age_s = (esp_timer_get_time() - last_aps_tx_ok_us) / 1000000LL;
         ESP_LOGD(TAG, "🛡️ Watchdog: link healthy (last confirmed TX %lld s ago, fail streak %lu)",
                  (long long)age_s, (unsigned long)aps_tx_fail_streak);
+        offline_cycles = 0;
         return;  // link healthy, nothing to do
     }
 
+    if (!factory_new) {
+        /* Commissioned device that is offline: only a reboot gets us a secure
+         * rejoin. Wait 1, 2, 4, 8, then 12 cycles between successive reboots. */
+        uint32_t level = (rejoin_reboot_magic == REJOIN_REBOOT_MAGIC) ? rejoin_reboot_level : 0;
+        if (level > REJOIN_REBOOT_MAX_LEVEL) {
+            level = REJOIN_REBOOT_MAX_LEVEL;
+        }
+        uint32_t cycles_needed = 1UL << level;
+        if (cycles_needed > REJOIN_REBOOT_MAX_CYCLES) {
+            cycles_needed = REJOIN_REBOOT_MAX_CYCLES;
+        }
+
+        offline_cycles++;
+        if (offline_cycles >= cycles_needed && !esp_zb_ota_is_active()) {
+            rejoin_reboot_magic = REJOIN_REBOOT_MAGIC;
+            rejoin_reboot_level = (level < REJOIN_REBOOT_MAX_LEVEL) ? level + 1 : level;
+            ESP_LOGE(TAG, "🔁 Rejoin watchdog: offline for %lu cycle(s) (stack %s) - rebooting to rejoin (backoff level %lu)",
+                     (unsigned long)offline_cycles, joined ? "joined, link dead" : "not joined",
+                     (unsigned long)level);
+            vTaskDelay(pdMS_TO_TICKS(50));  // let the log flush
+            esp_restart();
+        }
+        ESP_LOGW(TAG, "🛡️ Rejoin watchdog: offline %lu/%lu cycle(s) before reboot",
+                 (unsigned long)offline_cycles, (unsigned long)cycles_needed);
+
+        if (joined) {
+            /* Stack still believes it is joined: steering would only broadcast a
+             * permit-join request and report a bogus success. Wait for the reboot. */
+            return;
+        }
+    }
+
+    /* Not joined: steering lets us (re)join if permit-join is open meanwhile. */
     ESP_LOGW(TAG, "🛡️ Rejoin watchdog: disconnected - attempting network steering");
     esp_zb_lock_acquire(portMAX_DELAY);
     esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb,
@@ -1630,13 +1686,16 @@ static void start_rejoin_watchdog(void)
 /* APS data-confirm callback: the delivery heartbeat.
  * Invoked by the stack (Zigbee task context) for every outgoing APS frame, so
  * esp_zb_* calls here are safe without the lock. A run of failed confirms means
- * the link is dead even if the stack still thinks we're joined - force a rejoin. */
+ * the link is dead even if the stack still thinks we're joined - flag it so the
+ * rejoin watchdog reboots the device into a secure rejoin. */
 static void aps_data_confirm_cb(esp_zb_apsde_data_confirm_t confirm)
 {
     if (confirm.status == 0) {
-        /* Delivered: link is alive. */
+        /* Delivered: link is alive end to end - clear the reboot backoff. */
         aps_tx_fail_streak = 0;
         last_aps_tx_ok_us = esp_timer_get_time();
+        rejoin_reboot_magic = 0;
+        rejoin_reboot_level = 0;
         return;
     }
 
@@ -1646,13 +1705,13 @@ static void aps_data_confirm_cb(esp_zb_apsde_data_confirm_t confirm)
              confirm.status, (unsigned long)aps_tx_fail_streak, HEARTBEAT_FAIL_THRESHOLD);
 
     if (zigbee_network_connected && aps_tx_fail_streak >= HEARTBEAT_FAIL_THRESHOLD) {
-        ESP_LOGW(TAG, "💔 Delivery heartbeat: %lu consecutive failures - parent/route lost, forcing rejoin",
+        ESP_LOGW(TAG, "💔 Delivery heartbeat: %lu consecutive failures - parent/route lost, watchdog will reboot to rejoin",
                  (unsigned long)aps_tx_fail_streak);
+        /* No steering here: the stack still thinks it is joined, so steering
+         * would report a bogus success and mark us connected again. The rejoin
+         * watchdog sees the flag and reboots into a secure rejoin. */
         zigbee_network_connected = false;
         aps_tx_fail_streak = 0;
-        /* Zigbee task context: schedule steering directly (no lock needed). */
-        esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb,
-                               ESP_ZB_BDB_MODE_NETWORK_STEERING, 0);
     }
 }
 

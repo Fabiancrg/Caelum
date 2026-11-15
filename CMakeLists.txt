@@ -10,8 +10,8 @@ idf_build_set_property(MINIMAL_BUILD ON)
 project(caelum_pro)
 
 # Version configuration
-set(PROJECT_VER "1.2")
-set(BUILD_NUMBER 10)
+set(PROJECT_VER "1.3")
+set(BUILD_NUMBER 0)
 set(MANUFACTURER_CODE "0xFABC")
 set(IMAGE_TYPE "0x1202")   # Caelum Pro - distinct from Caelum_Lite (0x1200) so OTA images cannot cross-flash
 set(ZIGBEE_STACK_VERSION "0x0003")  # Zigbee 3.0
