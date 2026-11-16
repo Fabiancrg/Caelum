@@ -260,6 +260,16 @@ idf.py -p [PORT] flash monitor
 - **Network Status**: Visual feedback via RGB LED during boot/join only
 - **Power Savings**: RMT peripheral powered down after boot (~1-2mA savings)
 
+#### **Network Loss Recovery**
+A rejoin watchdog checks the connection every 5 minutes, and three consecutive failed message deliveries also mark the link as lost.
+
+- **Paired device that goes offline** (coordinator or parent router down, link lost): the device reboots so the Zigbee stack performs a secure rejoin with its stored network key. No pairing mode is needed on the coordinator.
+- **Backoff**: the wait before each reboot doubles (5, 10, 20, 40, then 60 minutes) to protect the battery during a long outage. It resets once a message is confirmed delivered.
+- **Factory-new device**: keeps retrying network steering, which needs permit-join open on the coordinator.
+- Rain counts and battery data are kept in NVS across these reboots, and no reboot happens during an OTA update.
+
+Serial log line: `Rejoin watchdog: offline for N cycle(s) ... rebooting to rejoin`.
+
 ### 📡 Data Reporting
 - **Temperature/Humidity/Pressure**: Reported after network join and as configured
 - **Rainfall**: Immediate on rain detection (1mm threshold)
